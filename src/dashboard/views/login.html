@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign In | Darklock</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="icon" type="image/png" href="/images/darklock-logo.png">
+    <style>
+        :root {
+            --bg-base: #06060b;
+            --bg-surface: #0c0c14;
+            --bg-elevated: #12121c;
+            --bg-card: #161622;
+            --text-primary: #f0f2f5;
+            --text-secondary: #8b8fa3;
+            --text-muted: #5c5f73;
+            --accent: #6366f1;
+            --accent-light: #818cf8;
+            --accent-glow: rgba(99, 102, 241, 0.25);
+            --discord: #5865F2;
+            --google: #4285F4;
+            --success: #22c55e;
+            --danger: #ef4444;
+            --border: rgba(255,255,255,0.06);
+            --border-hover: rgba(255,255,255,0.12);
+            --radius: 12px;
+            --radius-lg: 20px;
+            --font: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+        }
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        html { -webkit-font-smoothing: antialiased; }
+        body {
+            font-family: var(--font);
+            background: var(--bg-base);
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            overflow: hidden;
+        }
+
+        /* Animated Background */
+        .bg-grid {
+            position: fixed; inset: 0; z-index: 0;
+            background-image:
+                linear-gradient(rgba(255,255,255,0.015) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255,255,255,0.015) 1px, transparent 1px);
+            background-size: 60px 60px;
+        }
+        .bg-glow-1 {
+            position: fixed; width: 600px; height: 600px; border-radius: 50%;
+            background: radial-gradient(circle, rgba(99,102,241,0.12), transparent 70%);
+            top: -200px; right: -200px; z-index: 0;
+            animation: glow-drift 20s ease-in-out infinite;
+        }
+        .bg-glow-2 {
+            position: fixed; width: 500px; height: 500px; border-radius: 50%;
+            background: radial-gradient(circle, rgba(139,92,246,0.1), transparent 70%);
+            bottom: -150px; left: -150px; z-index: 0;
+            animation: glow-drift 25s ease-in-out infinite reverse;
+        }
+        @keyframes glow-drift {
+            0%, 100% { transform: translate(0, 0) scale(1); }
+            33% { transform: translate(30px, -20px) scale(1.05); }
+            66% { transform: translate(-20px, 30px) scale(0.95); }
+        }
+
+        /* Login Card */
+        .login-wrap {
+            position: relative; z-index: 1;
+            width: 100%; max-width: 420px;
+            padding: 1.5rem;
+        }
+        .login-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
+            padding: 2.5rem;
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+        }
+        .login-card::before {
+            content: ''; position: absolute; top: 0; left: 0; right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, var(--accent), #8b5cf6);
+        }
+
+        /* Back link */
+        .back-link {
+            display: inline-flex; align-items: center; gap: 0.4rem;
+            color: var(--text-muted); text-decoration: none;
+            font-size: 0.82rem; font-weight: 500;
+            margin-bottom: 1.75rem; transition: color 0.15s;
+        }
+        .back-link:hover { color: var(--accent-light); }
+
+        /* Header */
+        .login-header { text-align: center; margin-bottom: 2rem; }
+        .login-logo {
+            width: 56px; height: 56px; margin: 0 auto 1.25rem;
+        }
+        .login-logo img {
+            width: 100%; height: 100%; border-radius: 14px;
+            box-shadow: 0 8px 30px rgba(99,102,241,0.3);
+        }
+        .login-header h1 {
+            font-size: 1.5rem; font-weight: 700;
+            margin-bottom: 0.35rem;
+        }
+        .login-header p {
+            color: var(--text-secondary); font-size: 0.9rem;
+        }
+
+        /* Discord button */
+        .btn-discord {
+            display: flex; align-items: center; justify-content: center; gap: 0.6rem;
+            width: 100%; padding: 0.85rem;
+            background: var(--discord); color: #fff;
+            border: none; border-radius: var(--radius);
+            font-size: 0.95rem; font-weight: 600;
+            font-family: var(--font);
+            cursor: pointer; text-decoration: none;
+            transition: all 0.2s;
+        }
+        .btn-discord:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 8px 25px rgba(88,101,242,0.35);
+        }
+
+        /* Google button */
+        .btn-google {
+            display: flex; align-items: center; justify-content: center; gap: 0.6rem;
+            width: 100%; padding: 0.85rem;
+            background: var(--bg-elevated); color: var(--text-primary);
+            border: 1px solid var(--border-hover); border-radius: var(--radius);
+            font-size: 0.95rem; font-weight: 600;
+            font-family: var(--font);
+            cursor: pointer; text-decoration: none;
+            transition: all 0.2s;
+            margin-top: 0.75rem;
+        }
+        .btn-google:hover {
+            transform: translateY(-1px);
+            background: var(--bg-card);
+            border-color: var(--google);
+            box-shadow: 0 8px 25px rgba(66,133,244,0.25);
+        }
+        .btn-google .google-icon {
+            width: 18px; height: 18px; flex-shrink: 0;
+        }
+
+        /* Divider */
+        .divider {
+            display: flex; align-items: center; gap: 0.75rem;
+            margin: 1.5rem 0; color: var(--text-muted); font-size: 0.78rem;
+        }
+        .divider::before, .divider::after {
+            content: ''; flex: 1; height: 1px; background: var(--border);
+        }
+
+        /* Form */
+        .form-group { margin-bottom: 1.1rem; }
+        .form-group label {
+            display: block; font-size: 0.82rem; font-weight: 500;
+            color: var(--text-secondary); margin-bottom: 0.4rem;
+        }
+        .form-group input {
+            width: 100%; padding: 0.75rem 1rem;
+            background: var(--bg-elevated);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text-primary);
+            font-size: 0.9rem; font-family: var(--font);
+            transition: all 0.15s;
+        }
+        .form-group input::placeholder { color: var(--text-muted); }
+        .form-group input:focus {
+            outline: none;
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px var(--accent-glow);
+        }
+
+        /* Submit button */
+        .btn-submit {
+            width: 100%; padding: 0.85rem;
+            background: linear-gradient(135deg, var(--accent), #8b5cf6);
+            color: #fff; border: none;
+            border-radius: var(--radius);
+            font-size: 0.95rem; font-weight: 600;
+            font-family: var(--font);
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex; align-items: center; justify-content: center; gap: 0.5rem;
+        }
+        .btn-submit:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 8px 25px var(--accent-glow);
+        }
+        .btn-submit:disabled {
+            opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none;
+        }
+
+        /* Error */
+        .error-msg {
+            background: rgba(239,68,68,0.08);
+            border: 1px solid rgba(239,68,68,0.2);
+            color: #fca5a5; padding: 0.75rem 1rem;
+            border-radius: 8px; margin-bottom: 1rem;
+            text-align: center; font-size: 0.85rem;
+            display: none;
+        }
+
+        /* 2FA hint */
+        .hint { color: var(--text-muted); font-size: 0.78rem; margin-top: 0.35rem; }
+
+        /* Footer */
+        .login-footer {
+            text-align: center; margin-top: 1.75rem;
+            padding-top: 1.25rem;
+            border-top: 1px solid var(--border);
+        }
+        .login-footer p { color: var(--text-muted); font-size: 0.78rem; }
+        .login-footer a { color: var(--text-secondary); text-decoration: none; }
+        .login-footer a:hover { color: var(--accent-light); }
+
+        @media (max-width: 480px) {
+            .login-card { padding: 2rem; }
+            .login-header h1 { font-size: 1.3rem; }
+        }
+    </style>
+    <link id="dynamic-theme-stylesheet" rel="stylesheet" href="/api/v4/admin/theme/css">
+    <script src="/js/global-theme.js"></script>
+</head>
+<body>
+    <div class="bg-grid"></div>
+    <div class="bg-glow-1"></div>
+    <div class="bg-glow-2"></div>
+
+    <div class="login-wrap">
+        <div class="login-card">
+            <a href="/site/" class="back-link">
+                <i class="fas fa-arrow-left"></i> Back to Home
+            </a>
+
+            <div class="login-header">
+                <div class="login-logo">
+                    <img src="/platform/static/icons/darklock-logo.png" alt="Darklock">
+                </div>
+                <h1>Security Dashboard</h1>
+                <p>Sign in to access your dashboard</p>
+            </div>
+
+            <a href="/auth/discord" class="btn-discord">
+                <i class="fab fa-discord"></i> Continue with Discord
+            </a>
+
+            <a href="/auth/google" class="btn-google">
+                <svg class="google-icon" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                    <path d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.875 2.684-6.615z" fill="#4285F4"/>
+                    <path d="M9 18c2.43 0 4.467-.806 5.956-2.184l-2.908-2.258c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z" fill="#34A853"/>
+                    <path d="M3.964 10.707A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.707V4.961H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.039l3.007-2.332z" fill="#FBBC05"/>
+                    <path d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.961L3.964 7.293C4.672 5.163 6.656 3.58 9 3.58z" fill="#EA4335"/>
+                </svg>
+                Continue with Google
+            </a>
+
+            <div class="divider"><span>or use admin login</span></div>
+
+            <form id="loginForm">
+                <div class="error-msg" id="errorMessage"></div>
+
+                <div class="form-group">
+                    <label for="username">Admin Username</label>
+                    <input type="text" id="username" name="username" placeholder="Enter your username" autocomplete="username" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="password">Admin Password</label>
+                    <input type="password" id="password" name="password" placeholder="Enter your password" autocomplete="current-password" required>
+                </div>
+
+                <div class="form-group" id="twoFactorGroup" style="display:none">
+                    <label for="totpToken">Two-Factor Authentication Code</label>
+                    <input type="text" id="totpToken" name="token" placeholder="Enter 6-digit code" maxlength="6" pattern="[0-9]{6}" autocomplete="one-time-code">
+                    <p class="hint">Enter the code from your authenticator app or use a backup code.</p>
+                </div>
+
+                <button type="submit" class="btn-submit" id="loginButton">
+                    <span id="loginButtonText">Sign In</span>
+                    <i id="loginSpinner" class="fas fa-spinner fa-spin" style="display:none"></i>
+                </button>
+            </form>
+
+            <div class="login-footer">
+                <p><a href="/platform">Darklock Platform</a> &middot; <a href="/site/">Bot Website</a> &middot; <a href="/site/bug-reports">Report Bug</a></p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    (function() {
+        'use strict';
+        var requires2FA = false;
+        var urlParams = new URLSearchParams(window.location.search);
+
+        document.getElementById('loginForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            var username = document.getElementById('username').value;
+            var password = document.getElementById('password').value;
+            var totpToken = document.getElementById('totpToken').value;
+            var loginButton = document.getElementById('loginButton');
+            var loginButtonText = document.getElementById('loginButtonText');
+            var loginSpinner = document.getElementById('loginSpinner');
+            var errorMessage = document.getElementById('errorMessage');
+            var twoFactorGroup = document.getElementById('twoFactorGroup');
+
+            loginButton.disabled = true;
+            loginButtonText.style.display = 'none';
+            loginSpinner.style.display = 'inline';
+            errorMessage.style.display = 'none';
+
+            try {
+                var body = { username: username, password: password };
+                if (totpToken) body.token = totpToken;
+
+                var response = await fetch('/auth/login', {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+
+                var data = await response.json();
+
+                if (response.status === 429) {
+                    var minutes = Math.ceil(data.remainingTime);
+                    throw new Error('Too many failed attempts. Account locked for ' + minutes + ' minute' + (minutes > 1 ? 's' : '') + '.');
+                }
+
+                if (data.requires2FA) {
+                    requires2FA = true;
+                    twoFactorGroup.style.display = 'block';
+                    document.getElementById('totpToken').focus();
+                    loginButtonText.textContent = 'Verify Code';
+                    throw new Error(data.message || 'Two-factor authentication required');
+                }
+
+                if (response.ok && data.success) {
+                    loginButtonText.textContent = 'Redirecting...';
+                    loginButtonText.style.display = 'inline';
+                    loginSpinner.style.display = 'none';
+                    setTimeout(function() { window.location.href = '/dashboard'; }, 500);
+                } else {
+                    throw new Error(data.error || 'Login failed');
+                }
+            } catch (error) {
+                errorMessage.textContent = error.message;
+                errorMessage.style.display = 'block';
+            } finally {
+                loginButton.disabled = false;
+                loginButtonText.style.display = 'inline';
+                loginSpinner.style.display = 'none';
+            }
+        });
+
+        // Check for OAuth error in URL
+        var error = urlParams.get('error');
+        if (error) {
+            var errorMessage = document.getElementById('errorMessage');
+            errorMessage.textContent = decodeURIComponent(error);
+            errorMessage.style.display = 'block';
+            window.history.replaceState({}, document.title, window.location.pathname);
+        }
+
+        // If already logged in, redirect to dashboard
+        var hasDashToken = document.cookie.split(';').some(function(c) { return c.trim().startsWith('dashboardToken='); });
+        if (hasDashToken) {
+            window.location.href = '/dashboard';
+        }
+    })();
+    </script>
+</body>
+</html>

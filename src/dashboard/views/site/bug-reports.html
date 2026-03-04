@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <style>html,body{background:#06060b!important;color-scheme:dark}</style>
+    <meta name="color-scheme" content="dark">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Report a Bug — Darklock</title>
+    <meta name="description" content="Report bugs and issues to help improve Darklock.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="icon" type="image/png" href="/platform/static/icons/darklock-guard.png" sizes="256x256">
+    <style>
+        :root {
+            --bg-base: #06060b;
+            --bg-surface: #0c0c14;
+            --bg-elevated: #12121c;
+            --bg-card: #161622;
+            --text-primary: #f0f2f5;
+            --text-secondary: #8b8fa3;
+            --text-muted: #5c5f73;
+            --accent: #6366f1;
+            --accent-light: #818cf8;
+            --accent-glow: rgba(99,102,241,0.25);
+            --accent-secondary: #8b5cf6;
+            --success: #22c55e;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --border: rgba(255,255,255,0.06);
+            --border-hover: rgba(255,255,255,0.12);
+            --radius: 10px;
+            --radius-lg: 16px;
+            --font: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+        }
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        html { scroll-behavior: smooth; -webkit-font-smoothing: antialiased; }
+        body {
+            font-family: var(--font);
+            color: var(--text-primary);
+            background: var(--bg-base);
+            line-height: 1.6;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        a { color: var(--accent-light); text-decoration: none; transition: color .2s; }
+        a:hover { color: #a5b4fc; }
+
+        /* Background */
+        .bg-grid {
+            position: fixed; inset: 0; z-index: 0; pointer-events: none;
+            background-image:
+                linear-gradient(rgba(255,255,255,0.015) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255,255,255,0.015) 1px, transparent 1px);
+            background-size: 60px 60px;
+        }
+
+        /* Nav */
+        .nav {
+            position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+            background: rgba(6,6,11,0.85);
+            backdrop-filter: blur(20px) saturate(1.4);
+            -webkit-backdrop-filter: blur(20px) saturate(1.4);
+            border-bottom: 1px solid var(--border);
+        }
+        .nav-inner {
+            display: flex; align-items: center; justify-content: space-between;
+            max-width: 1200px; margin: 0 auto; padding: 0.85rem 1.5rem;
+        }
+        .nav-brand {
+            display: flex; align-items: center; gap: 0.6rem;
+            color: var(--text-primary); font-weight: 700; font-size: 1.2rem;
+            text-decoration: none;
+        }
+        .nav-brand img { width: 34px; height: 34px; border-radius: 8px; }
+        .nav-links { display: flex; align-items: center; gap: 1.5rem; }
+        .nav-links a {
+            color: var(--text-secondary); font-size: 0.88rem; font-weight: 500;
+            transition: color .2s; text-decoration: none;
+        }
+        .nav-links a:hover { color: var(--text-primary); }
+        .nav-links .active { color: #f97316; }
+        .btn-nav {
+            padding: 0.5rem 1.2rem; border-radius: var(--radius);
+            background: linear-gradient(135deg, var(--accent), var(--accent-light));
+            color: #fff; font-weight: 600; font-size: 0.85rem;
+            text-decoration: none; transition: transform 0.15s, box-shadow 0.15s;
+        }
+        .btn-nav:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 16px var(--accent-glow);
+            color: #fff;
+        }
+        .nav-toggle {
+            display: none; background: none; border: none; cursor: pointer;
+            color: var(--text-secondary); font-size: 1.3rem;
+        }
+
+        /* Page Header */
+        .page-header {
+            padding: 8rem 0 3rem;
+            text-align: center;
+            position: relative;
+            z-index: 1;
+        }
+        .page-header .badge {
+            display: inline-flex; align-items: center; gap: 0.5rem;
+            padding: 0.35rem 1rem; border-radius: 999px;
+            background: rgba(249,115,22,0.1);
+            border: 1px solid rgba(249,115,22,0.25);
+            color: #f97316;
+            font-size: 0.8rem; font-weight: 600;
+            margin-bottom: 1rem;
+        }
+        .page-header h1 {
+            font-size: 2.5rem; font-weight: 800;
+            margin-bottom: 0.75rem;
+            background: linear-gradient(135deg, #f0f2f5, #8b8fa3);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .page-header p {
+            color: var(--text-secondary); font-size: 1.1rem;
+            max-width: 500px; margin: 0 auto;
+        }
+
+        /* Container */
+        .container { max-width: 720px; margin: 0 auto; padding: 0 1.5rem; position: relative; z-index: 1; }
+
+        /* Card */
+        .report-card {
+            background: var(--bg-surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
+            padding: 2.5rem;
+            margin-bottom: 3rem;
+            position: relative;
+            overflow: hidden;
+        }
+        .report-card::before {
+            content: '';
+            position: absolute; top: 0; left: 0; right: 0;
+            height: 2px;
+            background: linear-gradient(90deg, transparent, #f97316, var(--accent), transparent);
+            opacity: 0.5;
+        }
+
+        /* Info box */
+        .info-box {
+            background: rgba(99,102,241,0.06);
+            border-left: 3px solid var(--accent);
+            padding: 1rem 1.25rem;
+            border-radius: 0 var(--radius) var(--radius) 0;
+            margin-bottom: 2rem;
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            line-height: 1.5;
+        }
+        .info-box strong { color: var(--accent-light); }
+
+        /* Form */
+        .form-group { margin-bottom: 1.5rem; }
+        .form-label {
+            display: flex; align-items: center; gap: 0.4rem;
+            color: var(--text-secondary);
+            font-size: 0.82rem; font-weight: 600;
+            text-transform: uppercase; letter-spacing: 0.04em;
+            margin-bottom: 0.5rem;
+        }
+        .form-label .req { color: var(--danger); }
+        .form-input, .form-select, .form-textarea {
+            width: 100%;
+            background: var(--bg-elevated);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 0.75rem 1rem;
+            color: var(--text-primary);
+            font-family: var(--font);
+            font-size: 0.95rem;
+            transition: border-color 0.2s, box-shadow 0.2s;
+            outline: none;
+        }
+        .form-input:focus, .form-select:focus, .form-textarea:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px var(--accent-glow);
+        }
+        .form-input::placeholder, .form-textarea::placeholder { color: var(--text-muted); }
+        .form-textarea { resize: vertical; min-height: 140px; line-height: 1.5; }
+        .form-select {
+            cursor: pointer;
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%235c5f73' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 1rem center;
+            padding-right: 2.5rem;
+        }
+        .form-select option { background: var(--bg-elevated); color: var(--text-primary); }
+
+        /* Row layout */
+        .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+
+        /* Submit */
+        .btn-submit {
+            width: 100%;
+            padding: 0.85rem 1.5rem;
+            background: linear-gradient(135deg, #f97316, #f59e0b);
+            color: #000;
+            border: none; border-radius: var(--radius);
+            font-family: var(--font); font-size: 0.95rem; font-weight: 700;
+            cursor: pointer;
+            transition: transform 0.15s, box-shadow 0.15s;
+            display: flex; align-items: center; justify-content: center; gap: 0.5rem;
+        }
+        .btn-submit:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 24px rgba(249,115,22,0.35);
+        }
+        .btn-submit:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
+
+        /* Messages */
+        .msg { display: none; border-radius: var(--radius); padding: 1.25rem; margin-bottom: 1.5rem; text-align: center; }
+        .msg.show { display: block; }
+        .msg-error { background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.2); color: var(--danger); }
+        .msg-success {
+            background: rgba(34,197,94,0.08); border: 1px solid rgba(34,197,94,0.2); color: var(--success);
+            padding: 2.5rem;
+        }
+        .msg-success i { font-size: 2.5rem; margin-bottom: 0.75rem; }
+        .msg-success h3 { font-size: 1.25rem; margin-bottom: 0.4rem; color: var(--text-primary); }
+        .msg-success p { color: var(--text-secondary); font-size: 0.9rem; }
+        .msg-success .btn-again {
+            display: inline-flex; align-items: center; gap: 0.4rem;
+            margin-top: 1.25rem; padding: 0.6rem 1.5rem;
+            background: rgba(255,255,255,0.06); border: 1px solid var(--border);
+            border-radius: var(--radius); color: var(--text-primary);
+            font-weight: 600; font-size: 0.85rem; cursor: pointer;
+            transition: background 0.2s;
+        }
+        .msg-success .btn-again:hover { background: rgba(255,255,255,0.1); }
+
+        /* Footer */
+        .footer {
+            margin-top: auto;
+            padding: 2rem 0;
+            border-top: 1px solid var(--border);
+            text-align: center;
+            position: relative; z-index: 1;
+        }
+        .footer-inner {
+            max-width: 1200px; margin: 0 auto; padding: 0 1.5rem;
+            display: flex; align-items: center; justify-content: space-between;
+        }
+        .footer p { color: var(--text-muted); font-size: 0.82rem; }
+        .footer-links { display: flex; gap: 1.5rem; }
+        .footer-links a { color: var(--text-muted); font-size: 0.82rem; }
+        .footer-links a:hover { color: var(--text-secondary); }
+
+        /* Animations */
+        @keyframes fadeUp {
+            from { opacity: 0; transform: translateY(16px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .report-card { animation: fadeUp 0.5s ease-out; }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .nav-links { display: none; }
+            .nav-toggle { display: block; }
+            .nav-links.open {
+                display: flex; flex-direction: column;
+                position: absolute; top: 100%; left: 0; right: 0;
+                background: rgba(6,6,11,0.96);
+                padding: 1rem 1.5rem; gap: 0.75rem;
+                border-bottom: 1px solid var(--border);
+            }
+            .page-header h1 { font-size: 1.8rem; }
+            .report-card { padding: 1.5rem; }
+            .form-row { grid-template-columns: 1fr; }
+            .footer-inner { flex-direction: column; gap: 0.75rem; }
+        }
+    </style>
+</head>
+<body>
+    <div class="bg-grid"></div>
+
+    <!-- Navigation -->
+    <nav class="nav">
+        <div class="nav-inner">
+            <a href="/platform" class="nav-brand">
+                <img src="/platform/static/icons/darklock-logo.png" alt="Darklock">
+                <span>Darklock</span>
+            </a>
+            <div class="nav-links" id="navLinks">
+                <a href="/platform">Platform</a>
+                <a href="/site/">Bot</a>
+                <a href="/platform/status">Status</a>
+                <a href="/site/bug-reports" class="active"><i class="fas fa-bug" style="margin-right:3px;font-size:.75rem"></i>Bugs</a>
+                <a href="/platform/auth/login" class="btn-nav">Sign In</a>
+            </div>
+            <button class="nav-toggle" id="navToggle" aria-label="Toggle menu">
+                <i class="fas fa-bars"></i>
+            </button>
+        </div>
+    </nav>
+
+    <!-- Header -->
+    <section class="page-header">
+        <div class="badge"><i class="fas fa-bug"></i> Bug Report</div>
+        <h1>Report a Bug</h1>
+        <p>Help us improve Darklock by reporting issues you encounter. Every report is reviewed by our team.</p>
+    </section>
+
+    <!-- Content -->
+    <div class="container">
+        <div class="report-card">
+            <div class="info-box">
+                <strong>Found an issue?</strong> Please provide as much detail as possible so we can investigate and fix it quickly. Include steps to reproduce when possible.
+            </div>
+
+            <div id="errorMessage" class="msg msg-error"></div>
+            <div id="successMessage" class="msg msg-success">
+                <i class="fas fa-check-circle"></i>
+                <h3>Bug Report Submitted</h3>
+                <p>Thank you for your report. Our team will investigate and work on a fix.</p>
+                <button class="btn-again" id="reportAnother"><i class="fas fa-plus"></i> Report Another</button>
+            </div>
+
+            <form id="bugReportForm">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">Report Type <span class="req">*</span></label>
+                        <select class="form-select" id="reportType" name="type" required>
+                            <option value="">Select type...</option>
+                            <option value="bug">Bug Report</option>
+                            <option value="security">Security Vulnerability</option>
+                            <option value="feature">Feature Request</option>
+                            <option value="performance">Performance Issue</option>
+                            <option value="ui">UI/UX Issue</option>
+                            <option value="other">Other</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Severity <span class="req">*</span></label>
+                        <select class="form-select" id="severity" name="severity" required>
+                            <option value="">Select severity...</option>
+                            <option value="critical">Critical — System down</option>
+                            <option value="high">High — Major feature broken</option>
+                            <option value="medium">Medium — Partially working</option>
+                            <option value="low">Low — Minor issue</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Title <span class="req">*</span></label>
+                    <input type="text" class="form-input" id="title" name="title" placeholder="Brief description of the issue" required maxlength="200">
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Description <span class="req">*</span></label>
+                    <textarea class="form-textarea" id="description" name="description" placeholder="Detailed description of the issue, steps to reproduce, and expected vs actual behavior..." required></textarea>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">Environment</label>
+                        <input type="text" class="form-input" id="environment" name="environment" placeholder="e.g. Chrome, Windows 11">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Contact Email</label>
+                        <input type="email" class="form-input" id="contactEmail" name="email" placeholder="your@email.com">
+                    </div>
+                </div>
+
+                <button type="submit" class="btn-submit" id="submitBtn">
+                    <i class="fas fa-paper-plane"></i> Submit Report
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="footer-inner">
+            <p>&copy; 2026 Darklock. All rights reserved.</p>
+            <div class="footer-links">
+                <a href="/platform">Platform</a>
+                <a href="/platform/privacy">Privacy</a>
+                <a href="/platform/terms">Terms</a>
+                <a href="https://discord.gg/Vsq9PUTrgb" target="_blank"><i class="fab fa-discord"></i> Discord</a>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+    (function() {
+        // Nav toggle
+        document.getElementById('navToggle').addEventListener('click', function() {
+            document.getElementById('navLinks').classList.toggle('open');
+        });
+
+        // Form submit
+        document.getElementById('bugReportForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            var btn = document.getElementById('submitBtn');
+            var errMsg = document.getElementById('errorMessage');
+            var successMsg = document.getElementById('successMessage');
+
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Submitting...';
+            errMsg.classList.remove('show');
+
+            try {
+                var email = document.getElementById('contactEmail').value;
+                var formData = {
+                    source: 'site',
+                    reporter: email || 'Anonymous',
+                    email: email || null,
+                    title: document.getElementById('title').value,
+                    description: document.getElementById('description').value,
+                    severity: document.getElementById('severity').value,
+                    environment: document.getElementById('environment').value,
+                    logs: 'Type: ' + document.getElementById('reportType').value + ' | UA: ' + navigator.userAgent + ' | At: ' + new Date().toISOString(),
+                    app_version: null
+                };
+
+                var response = await fetch('/api/v4/admin/bug-reports/submit', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(formData)
+                });
+
+                var data = await response.json();
+                if (response.ok && data.success) {
+                    this.style.display = 'none';
+                    successMsg.classList.add('show');
+                } else {
+                    throw new Error(data.error || 'Failed to submit report');
+                }
+            } catch (error) {
+                errMsg.textContent = error.message || 'Failed to submit. Please try again.';
+                errMsg.classList.add('show');
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-paper-plane"></i> Submit Report';
+            }
+        });
+
+        // Report another
+        document.getElementById('reportAnother').addEventListener('click', function() {
+            var form = document.getElementById('bugReportForm');
+            form.reset();
+            form.style.display = '';
+            document.getElementById('successMessage').classList.remove('show');
+            document.getElementById('errorMessage').classList.remove('show');
+        });
+    })();
+    </script>
+</body>
+</html>

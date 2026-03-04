@@ -1,0 +1,134 @@
+{
+  "security": {
+    "antiRaid": {
+      "enabled": true,
+      "threshold": 10,
+      "timeWindow": 60,
+      "lockdownDuration": 300,
+      "autoKick": true,
+      "notifyMods": true
+    },
+    "antiSpam": {
+      "enabled": true,
+      "maxMessages": 5,
+      "timeWindow": 10,
+      "maxDuplicates": 3,
+      "maxMentions": 5,
+      "maxEmojis": 10,
+      "maxLinks": 2
+    },
+    "antiMaliciousLinks": {
+      "enabled": true,
+      "quarantine": true,
+      "scanTimeout": 5000,
+      "checkShorteners": true,
+      "autoDelete": true
+    },
+    "antiPhishing": {
+      "enabled": true,
+      "similarityThreshold": 0.8,
+      "checkUsernames": true,
+      "checkMessages": true,
+      "dmProtection": true
+    },
+    "userVerification": {
+      "enabled": true,
+      "minAccountAge": 24,
+      "requireCaptcha": true,
+      "vpnDetection": false,
+      "autoKickNewAccounts": false
+    }
+  },
+  "moderation": {
+    "roleAuditing": {
+      "enabled": true,
+      "requireApproval": [
+        "ADMINISTRATOR",
+        "MANAGE_GUILD",
+        "MANAGE_ROLES"
+      ],
+      "alertChannel": null,
+      "autoBackup": true
+    },
+    "channelProtection": {
+      "enabled": true,
+      "protectSystemChannels": true,
+      "requireConfirmation": true,
+      "autoRestore": true
+    },
+    "elevatedActions": {
+      "requireMultipleApprovals": true,
+      "minimumApprovers": 2,
+      "actions": [
+        "MASS_BAN",
+        "ROLE_DELETE",
+        "CHANNEL_DELETE"
+      ]
+    }
+  },
+  "logging": {
+    "enabled": true,
+    "retentionDays": 30,
+    "logMessages": true,
+    "logJoins": true,
+    "logRoles": true,
+    "logChannels": true,
+    "logModerationActions": true,
+    "redactSensitiveContent": true
+  },
+  "backup": {
+    "enabled": true,
+    "autoBackup": true,
+    "backupInterval": 24,
+    "retentionDays": 7,
+    "includeMessages": false,
+    "includeRoles": true,
+    "includeChannels": true,
+    "includePermissions": true
+  },
+  "dashboard": {
+    "enabled": true,
+    "port": 3000,
+    "host": "localhost",
+    "requireAuth": true,
+    "sessionTimeout": 3600
+  },
+  "ai": {
+    "toxicityFilter": {
+      "enabled": true,
+      "threshold": 0.7,
+      "autoDelete": true,
+      "autoTimeout": false
+    },
+    "behaviorAnalysis": {
+      "enabled": true,
+      "trackPatterns": true,
+      "riskScoring": true,
+      "alertThreshold": 80
+    }
+  },
+  "integrations": {
+    "virusTotal": {
+      "enabled": false,
+      "apiKey": null
+    },
+    "urlVoid": {
+      "enabled": false,
+      "apiKey": null
+    },
+    "safeBrowsing": {
+      "enabled": false,
+      "apiKey": null
+    }
+  },
+  "rateLimits": {
+    "commands": {
+      "user": 10,
+      "global": 100
+    },
+    "api": {
+      "requests": 1000,
+      "burst": 50
+    }
+  }
+}

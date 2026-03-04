@@ -1,0 +1,9 @@
+name = "darklock-fallback"
+main = "worker.js"
+compatibility_date = "2024-01-01"
+
+# Routes — the worker intercepts ALL requests on darklock.net
+# Replace with your actual zone/domain if different
+[[routes]]
+pattern = "darklock.net/*"
+zone_name = "darklock.net"

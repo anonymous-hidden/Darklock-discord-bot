@@ -1,0 +1,78 @@
+# ── Dependencies ──────────────────────────────────────────────────────────────
+node_modules/
+.npm
+.venv/
+__pycache__/
+*.pyc
+
+# ── Secrets / environment ─────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# ── Render hosting (not needed for public repo) ───────────────────────────────
+render.yaml
+.env.render.example
+.env.xp-example
+scripts/render-start.js
+
+# ── Runtime / generated data ──────────────────────────────────────────────────
+data/
+logs/
+*.log
+uploads/
+temp/
+dist/
+build/
+
+# ── Database files (user data) ────────────────────────────────────────────────
+darklock/data/avatars/
+darklock/data/banners/
+darklock/data/sessions.json
+darklock/data/users.json
+darklock/data/*.db
+darklock/data/*.db-shm
+darklock/data/*.db-wal
+
+# ── Release binaries (hosted separately) ─────────────────────────────────────
+darklock/downloads/*.deb
+darklock/downloads/*.AppImage
+darklock/downloads/*.exe
+darklock/downloads/*.msi
+darklock/downloads/*.tar.gz
+darklock/downloads/*.zip
+darklock/downloads/*.dmg
+darklock/downloads/*.pkg
+darklock/downloads/updates/
+
+# ── File-protection runtime state ─────────────────────────────────────────────
+file-protection/backups/
+file-protection/logs/
+file-protection/config/baseline.json
+
+# ── Separate sub-apps (each has their own repo) ───────────────────────────────
+darklock-notes/
+guard-v2/
+secure-channel/
+
+# ── Dev/internal only ─────────────────────────────────────────────────────────
+README.old.md
+git-push.ps1
+git-push.sh
+update-auth-to-cookies.ps1
+
+# ── Compiled binaries ─────────────────────────────────────────────────────────
+bin/arduino-cli
+
+# ── OS ────────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── Cache ─────────────────────────────────────────────────────────────────────
+.cache
+.parcel-cache
+.eslintcache
+.nyc_output
+coverage/

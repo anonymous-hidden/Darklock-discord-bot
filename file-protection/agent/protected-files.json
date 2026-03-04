@@ -1,0 +1,19 @@
+[
+  "C:\\discord bot\\src\\bot.js",
+  "C:\\discord bot\\src\\database\\database.js",
+  "C:\\discord bot\\src\\dashboard\\dashboard.js",
+  "C:\\discord bot\\config.json",
+  "C:\\discord bot\\file-protection\\agent\\validator.js",
+  "C:\\discord bot\\file-protection\\agent\\baseline-manager.js",
+  "C:\\discord bot\\file-protection\\agent\\file-enumerator.js",
+  "C:\\discord bot\\file-protection\\agent\\watcher.js",
+  "C:\\discord bot\\file-protection\\agent\\protector.js",
+  "C:\\discord bot\\file-protection\\agent\\response-handler.js",
+  "C:\\discord bot\\file-protection\\agent\\environment-guard.js",
+  "C:\\discord bot\\file-protection\\agent\\baseline-generator.js",
+  "C:\\discord bot\\file-protection\\agent\\constants.js",
+  "C:\\discord bot\\file-protection\\agent\\hasher.js",
+  "C:\\discord bot\\file-protection\\index.js",
+  "C:\\discord bot\\package.json",
+  "C:\\discord bot\\package-lock.json"
+]

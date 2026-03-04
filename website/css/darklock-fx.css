@@ -1,0 +1,571 @@
+/**
+ * DarkLock FX — Premium Micro-Interaction & Animation System
+ * Consistent branding: Cyan #00d4ff / Green #06ffa5 / Purple #7c3aed
+ * Enterprise-grade visual polish for all dashboard pages
+ */
+
+/* ============================================
+   1. CURSOR GLOW TRAIL
+   ============================================ */
+.dl-cursor-glow {
+    position: fixed;
+    width: 320px;
+    height: 320px;
+    border-radius: 50%;
+    pointer-events: none;
+    z-index: 0;
+    opacity: 0;
+    transition: opacity 0.4s ease;
+    background: radial-gradient(circle, rgba(0,212,255,0.06) 0%, transparent 70%);
+    transform: translate(-50%, -50%);
+    will-change: left, top;
+}
+body:hover .dl-cursor-glow { opacity: 1; }
+
+/* ============================================
+   2. MAGNETIC HOVER BUTTONS
+   ============================================ */
+.dl-magnetic {
+    transition: transform 0.3s cubic-bezier(0.23, 1, 0.32, 1);
+    will-change: transform;
+}
+
+/* ============================================
+   3. 3D TILT CARDS
+   ============================================ */
+.dl-tilt {
+    transition: transform 0.15s ease-out, box-shadow 0.3s ease;
+    will-change: transform;
+    transform-style: preserve-3d;
+}
+.dl-tilt:hover {
+    box-shadow: 
+        0 20px 60px rgba(0,0,0,0.3),
+        0 0 40px rgba(0,212,255,0.08);
+}
+.dl-tilt .dl-tilt-shine {
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    background: radial-gradient(600px circle at var(--shine-x, 50%) var(--shine-y, 50%), rgba(0,212,255,0.07), transparent 40%);
+    z-index: 1;
+}
+.dl-tilt:hover .dl-tilt-shine { opacity: 1; }
+
+/* ============================================
+   4. RIPPLE EFFECT
+   ============================================ */
+.dl-ripple {
+    position: relative;
+    overflow: hidden;
+}
+.dl-ripple-wave {
+    position: absolute;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(0,212,255,0.25) 0%, transparent 70%);
+    transform: scale(0);
+    animation: dl-ripple-expand 0.6s ease-out forwards;
+    pointer-events: none;
+    z-index: 5;
+}
+@keyframes dl-ripple-expand {
+    to { transform: scale(4); opacity: 0; }
+}
+
+/* ============================================
+   5. SCROLL REVEAL ANIMATIONS
+   ============================================ */
+.dl-reveal {
+    opacity: 0;
+    transform: translateY(30px);
+    transition: opacity 0.6s cubic-bezier(0.16, 1, 0.3, 1), 
+                transform 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.dl-reveal.dl-revealed {
+    opacity: 1;
+    transform: translateY(0);
+}
+.dl-reveal-left {
+    opacity: 0;
+    transform: translateX(-40px);
+    transition: opacity 0.6s cubic-bezier(0.16, 1, 0.3, 1), 
+                transform 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.dl-reveal-left.dl-revealed {
+    opacity: 1;
+    transform: translateX(0);
+}
+.dl-reveal-right {
+    opacity: 0;
+    transform: translateX(40px);
+    transition: opacity 0.6s cubic-bezier(0.16, 1, 0.3, 1), 
+                transform 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.dl-reveal-right.dl-revealed {
+    opacity: 1;
+    transform: translateX(0);
+}
+.dl-reveal-scale {
+    opacity: 0;
+    transform: scale(0.9);
+    transition: opacity 0.5s cubic-bezier(0.16, 1, 0.3, 1), 
+                transform 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.dl-reveal-scale.dl-revealed {
+    opacity: 1;
+    transform: scale(1);
+}
+/* Stagger children */
+.dl-stagger > * { transition-delay: calc(var(--dl-i, 0) * 0.07s); }
+
+/* ============================================
+   6. NUMBER COUNT-UP GLOW
+   ============================================ */
+.dl-countup {
+    display: inline-block;
+    font-variant-numeric: tabular-nums;
+    position: relative;
+}
+.dl-countup.dl-counting::after {
+    content: '';
+    position: absolute;
+    bottom: -2px;
+    left: 0;
+    width: 100%;
+    height: 2px;
+    background: linear-gradient(90deg, #00d4ff, #06ffa5);
+    animation: dl-count-bar 1.5s ease-out forwards;
+    border-radius: 2px;
+}
+@keyframes dl-count-bar {
+    from { width: 0; opacity: 1; }
+    to { width: 100%; opacity: 0; }
+}
+
+/* ============================================
+   7. SKELETON LOADING
+   ============================================ */
+.dl-skeleton {
+    background: linear-gradient(90deg, 
+        rgba(255,255,255,0.04) 25%, 
+        rgba(255,255,255,0.08) 50%, 
+        rgba(255,255,255,0.04) 75%);
+    background-size: 200% 100%;
+    animation: dl-skeleton-shimmer 1.5s ease-in-out infinite;
+    border-radius: 8px;
+    min-height: 20px;
+}
+.dl-skeleton-text { height: 14px; margin-bottom: 8px; width: 80%; }
+.dl-skeleton-title { height: 24px; margin-bottom: 12px; width: 60%; }
+.dl-skeleton-avatar { width: 48px; height: 48px; border-radius: 12px; }
+.dl-skeleton-card { height: 160px; border-radius: 14px; }
+@keyframes dl-skeleton-shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+
+/* ============================================
+   8. TOAST NOTIFICATIONS
+   ============================================ */
+.dl-toast-container {
+    position: fixed;
+    top: 24px;
+    right: 24px;
+    z-index: 100000;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    pointer-events: none;
+}
+.dl-toast {
+    pointer-events: auto;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 20px;
+    background: rgba(15, 20, 35, 0.95);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(0,212,255,0.2);
+    border-radius: 14px;
+    color: #e2e8f0;
+    font-family: 'Inter', -apple-system, sans-serif;
+    font-size: 0.9rem;
+    font-weight: 500;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.3), 0 0 20px rgba(0,212,255,0.1);
+    animation: dl-toast-in 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    max-width: 400px;
+    cursor: pointer;
+    transition: transform 0.2s ease, opacity 0.2s ease;
+}
+.dl-toast:hover { transform: translateX(-4px); }
+.dl-toast.dl-toast-out { animation: dl-toast-out 0.3s ease-in forwards; }
+.dl-toast-icon {
+    width: 32px; height: 32px; border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.9rem; flex-shrink: 0;
+}
+.dl-toast-success .dl-toast-icon { background: rgba(16,185,129,0.15); color: #10b981; }
+.dl-toast-error .dl-toast-icon { background: rgba(239,68,68,0.15); color: #ef4444; }
+.dl-toast-warning .dl-toast-icon { background: rgba(245,158,11,0.15); color: #f59e0b; }
+.dl-toast-info .dl-toast-icon { background: rgba(0,212,255,0.15); color: #00d4ff; }
+.dl-toast-progress {
+    position: absolute; bottom: 0; left: 0; height: 3px; border-radius: 0 0 14px 14px;
+    background: linear-gradient(90deg, #00d4ff, #06ffa5);
+    animation: dl-toast-shrink var(--dl-toast-duration, 4s) linear forwards;
+}
+@keyframes dl-toast-in {
+    from { transform: translateX(120%); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+}
+@keyframes dl-toast-out {
+    from { transform: translateX(0); opacity: 1; }
+    to { transform: translateX(120%); opacity: 0; }
+}
+@keyframes dl-toast-shrink {
+    from { width: 100%; }
+    to { width: 0%; }
+}
+
+/* ============================================
+   9. GLOWING BORDER CARDS
+   ============================================ */
+.dl-glow-card {
+    position: relative;
+    border-radius: 14px;
+    overflow: hidden;
+    transition: transform 0.3s cubic-bezier(0.23, 1, 0.32, 1), box-shadow 0.3s ease;
+}
+.dl-glow-card::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1px;
+    background: linear-gradient(135deg, rgba(0,212,255,0.2), rgba(6,255,165,0.1), rgba(124,58,237,0.2));
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    opacity: 0;
+    transition: opacity 0.4s ease;
+    pointer-events: none;
+}
+.dl-glow-card:hover::before { opacity: 1; }
+.dl-glow-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 12px 40px rgba(0,0,0,0.2), 0 0 30px rgba(0,212,255,0.08);
+}
+
+/* ============================================
+   10. ANIMATED GRADIENT TEXT
+   ============================================ */
+.dl-gradient-text {
+    background: linear-gradient(135deg, #00d4ff 0%, #06ffa5 50%, #7c3aed 100%);
+    background-size: 200% 200%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: dl-gradient-shift 6s ease-in-out infinite;
+}
+@keyframes dl-gradient-shift {
+    0%, 100% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+}
+
+/* ============================================
+   11. PULSE DOT (live status indicators)
+   ============================================ */
+.dl-pulse-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: #10b981;
+    position: relative;
+    display: inline-block;
+    vertical-align: middle;
+}
+.dl-pulse-dot::before {
+    content: '';
+    position: absolute;
+    inset: -3px;
+    border-radius: 50%;
+    background: rgba(16,185,129,0.4);
+    animation: dl-pulse-ring 2s ease-out infinite;
+}
+.dl-pulse-dot.offline { background: #ef4444; }
+.dl-pulse-dot.offline::before { background: rgba(239,68,68,0.4); }
+.dl-pulse-dot.warning { background: #f59e0b; }
+.dl-pulse-dot.warning::before { background: rgba(245,158,11,0.4); }
+@keyframes dl-pulse-ring {
+    0% { transform: scale(1); opacity: 1; }
+    100% { transform: scale(2.5); opacity: 0; }
+}
+
+/* ============================================
+   12. HOVER SPOTLIGHT (for cards/panels)
+   ============================================ */
+.dl-spotlight {
+    position: relative;
+    overflow: hidden;
+}
+.dl-spotlight::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    background: radial-gradient(500px circle at var(--spot-x, 50%) var(--spot-y, 50%), rgba(0,212,255,0.05), transparent 40%);
+    pointer-events: none;
+    z-index: 1;
+}
+.dl-spotlight:hover::after { opacity: 1; }
+
+/* ============================================
+   13. INTERACTIVE SIDEBAR NAV ITEMS
+   ============================================ */
+.nav-item {
+    position: relative !important;
+    overflow: hidden !important;
+}
+.nav-item::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 3px;
+    height: 0;
+    background: linear-gradient(180deg, #00d4ff, #06ffa5);
+    border-radius: 0 3px 3px 0;
+    transition: height 0.3s cubic-bezier(0.23, 1, 0.32, 1);
+}
+.nav-item:hover::after,
+.nav-item.active::after {
+    height: 60%;
+}
+.nav-item.active::after {
+    height: 80%;
+    box-shadow: 0 0 12px rgba(0,212,255,0.4);
+}
+
+/* ============================================
+   14. STAT CARD HOVER COUNTERS
+   ============================================ */
+.dl-stat-card {
+    position: relative;
+    overflow: hidden;
+    transition: all 0.3s cubic-bezier(0.23, 1, 0.32, 1);
+}
+.dl-stat-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, #00d4ff, #06ffa5);
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform 0.4s cubic-bezier(0.23, 1, 0.32, 1);
+}
+.dl-stat-card:hover::before {
+    transform: scaleX(1);
+}
+.dl-stat-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 12px 40px rgba(0,0,0,0.2), 0 0 20px rgba(0,212,255,0.06);
+}
+
+/* ============================================
+   15. TYPEWRITER CURSOR
+   ============================================ */
+.dl-typewriter-cursor::after {
+    content: '|';
+    color: #00d4ff;
+    animation: dl-blink 1s step-end infinite;
+    font-weight: 300;
+    margin-left: 1px;
+}
+@keyframes dl-blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+}
+
+/* ============================================
+   16. FLOATING ACTION BADGE
+   ============================================ */
+.dl-fab-badge {
+    position: relative;
+}
+.dl-fab-badge::after {
+    content: attr(data-count);
+    position: absolute;
+    top: -6px; right: -6px;
+    min-width: 18px; height: 18px;
+    background: linear-gradient(135deg, #ef4444, #dc2626);
+    border-radius: 99px;
+    font-size: 0.65rem;
+    font-weight: 700;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 4px;
+    animation: dl-badge-bounce 0.4s cubic-bezier(0.68, -0.55, 0.27, 1.55);
+    box-shadow: 0 2px 8px rgba(239,68,68,0.4);
+}
+@keyframes dl-badge-bounce {
+    0% { transform: scale(0); }
+    100% { transform: scale(1); }
+}
+
+/* ============================================
+   17. BUTTON SHINE SWEEP
+   ============================================ */
+.btn-primary, .btn.btn-primary, .cta .btn-primary, 
+[class*="btn-primary"], button[class*="primary"],
+.dl-btn-shine {
+    position: relative !important;
+    overflow: hidden !important;
+}
+.btn-primary::after, .btn.btn-primary::after, 
+[class*="btn-primary"]::after, .dl-btn-shine::after {
+    content: '' !important;
+    position: absolute !important;
+    top: -50% !important;
+    left: -75% !important;
+    width: 50% !important;
+    height: 200% !important;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.12), transparent) !important;
+    transform: skewX(-25deg) !important;
+    transition: left 0.6s ease !important;
+    pointer-events: none !important;
+}
+.btn-primary:hover::after, .btn.btn-primary:hover::after,
+[class*="btn-primary"]:hover::after, .dl-btn-shine:hover::after {
+    left: 125% !important;
+}
+
+/* ============================================
+   18. SETTINGS TOGGLE SWITCH POLISH
+   ============================================ */
+.toggle-switch, .switch-slider, [class*="toggle"] {
+    transition: all 0.3s cubic-bezier(0.23, 1, 0.32, 1) !important;
+}
+
+/* ============================================
+   19. SMOOTH SCROLLBAR 
+   ============================================ */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { 
+    background: rgba(0,212,255,0.15); 
+    border-radius: 99px; 
+    border: 2px solid transparent;
+    background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover { background: rgba(0,212,255,0.3); background-clip: content-box; }
+::-webkit-scrollbar-corner { background: transparent; }
+
+/* ============================================
+   20. FOCUS RING (accessibility + style)
+   ============================================ */
+:focus-visible {
+    outline: 2px solid rgba(0,212,255,0.5) !important;
+    outline-offset: 2px !important;
+    border-radius: 4px;
+}
+
+/* ============================================
+   21. ANIMATED BACKGROUND GRID
+   ============================================ */
+.dl-grid-bg::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: 
+        linear-gradient(rgba(0,212,255,0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,212,255,0.03) 1px, transparent 1px);
+    background-size: 60px 60px;
+    pointer-events: none;
+    z-index: 0;
+    mask-image: radial-gradient(ellipse at center, black 30%, transparent 80%);
+    -webkit-mask-image: radial-gradient(ellipse at center, black 30%, transparent 80%);
+}
+
+/* ============================================
+   22. HOVER UNDERLINE LINKS
+   ============================================ */
+.dl-link, .sidebar-nav a span {
+    position: relative;
+    display: inline-block;
+}
+.dl-link::after {
+    content: '';
+    position: absolute;
+    bottom: -2px; left: 0;
+    width: 0; height: 2px;
+    background: linear-gradient(90deg, #00d4ff, #06ffa5);
+    transition: width 0.3s cubic-bezier(0.23, 1, 0.32, 1);
+    border-radius: 2px;
+}
+.dl-link:hover::after { width: 100%; }
+
+/* ============================================
+   23. MODAL OVERLAY BLUR
+   ============================================ */
+.modal, [class*="modal-overlay"], [class*="picker-overlay"] {
+    backdrop-filter: blur(8px) !important;
+    -webkit-backdrop-filter: blur(8px) !important;
+}
+
+/* ============================================
+   24. LOADING SPINNER BRAND STYLE
+   ============================================ */
+.dl-spinner {
+    width: 40px; height: 40px;
+    border-radius: 50%;
+    border: 3px solid rgba(0,212,255,0.1);
+    border-top-color: #00d4ff;
+    animation: dl-spin 0.8s linear infinite;
+}
+@keyframes dl-spin { to { transform: rotate(360deg); } }
+
+/* ============================================
+   25. TRANSITION POLISH ON COMMON ELEMENTS
+   ============================================ */
+a, button, input, select, textarea, 
+.card, .feature, .settings-section, .chart-container,
+[class*="card"], [class*="panel"], [class*="section"] {
+    transition: all 0.25s cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+/* Page entrance */
+.main-content, .page-content, .setup-container, .logs-container {
+    animation: dl-page-in 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes dl-page-in {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* ============================================
+   26. RESPONSIVE HOVER ONLY ON CAPABLE DEVICES
+   ============================================ */
+@media (hover: none) {
+    .dl-cursor-glow,
+    .dl-tilt .dl-tilt-shine,
+    .dl-spotlight::after { display: none !important; }
+}
+
+/* ============================================
+   27. REDUCED MOTION SUPPORT
+   ============================================ */
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+    .dl-cursor-glow { display: none; }
+}
