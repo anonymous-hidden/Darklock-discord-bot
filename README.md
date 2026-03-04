@@ -39,13 +39,8 @@
   - [Table Catalog (90+ tables)](#table-catalog-90-tables)
   - [Migration Systems](#migration-systems)
 - [9. Services & Middleware Layer](#9-services--middleware-layer)
-- [10. Deployment & Infrastructure](#10-deployment--infrastructure)
-  - [Startup Flow](#startup-flow)
-  - [Docker](#docker)
-  - [Cloudflare Tunnel](#cloudflare-tunnel)
-  - [Environment Variables](#environment-variables)
-- [11. Security Audit Findings](#11-security-audit-findings)
-- [12. File Structure Reference](#12-file-structure-reference)
+- [10. Security Audit Findings](#10-security-audit-findings)
+- [11. File Structure Reference](#11-file-structure-reference)
 
 ---
 
@@ -900,69 +895,7 @@ DarkLock supports optional hardware components for physical security:
 
 ---
 
-## 10. Deployment & Infrastructure
-
-### Startup Flow
-
-```
-Docker:
-  Dockerfile → startup.sh → validate-env.sh → check-downloads.js → baseline-generator.js → node src/bot.js
-
-Local Development:
-  start-all.sh → npm start (bot :3001) + darklock/start.js (:3002) + guard-service + guard-ui
-
-Hardware Watchdog:
-  start-bot.js → [check Pico serial] → src/bot.js (with/without watchdog auto-restart)
-```
-
-### Docker
-
-```yaml
-# docker-compose.yml
-services:
-  darklock:
-    build: .
-    ports: ["3001:3001", "3002:3002"]
-    volumes: [data, file-protection/config, logs, uploads, backups]
-    deploy:
-      resources:
-        limits: { cpus: '2', memory: 1G }
-    security_opt: ["no-new-privileges:true"]
-    healthcheck:
-      test: ["CMD", "node", "healthcheck.js"]
-      interval: 30s
-```
-
-**Dockerfile:** `node:18-bullseye-slim` with native build deps (cairo, pango, sqlite3). Non-root `node` user. `CMD ["sh", "startup.sh"]`.
-
-### Cloudflare Tunnel
-
-The production deployment uses **Cloudflare Tunnel** running on the Raspberry Pi 5 as a systemd service:
-
-| Hostname | Backend | Purpose |
-|----------|---------|---------|
-| `admin.darklock.net` | `http://localhost:3001` | Bot Dashboard |
-| `platform.darklock.net` | `http://localhost:3002` | Darklock Platform |
-
-### Environment Variables
-
-63 environment variables grouped by category:
-
-| Category | Variables | Required |
-|----------|-----------|----------|
-| **Discord** | `DISCORD_TOKEN`, `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`, `DISCORD_REDIRECT_URI` | Yes |
-| **Auth/Security** | `JWT_SECRET`, `ADMIN_JWT_SECRET`, `SESSION_SECRET`, `OAUTH_STATE_SECRET`, `ADMIN_PASSWORD`, `ADMIN_USERNAME`, `INTERNAL_API_KEY`, `AUDIT_ENCRYPTION_KEY` | Yes |
-| **Web** | `DASHBOARD_ORIGIN`, `BASE_URL`, `XP_DASHBOARD_URL`, `XP_DASHBOARD_PORT`, `CORS_ORIGINS` | Yes |
-| **Database** | `DB_NAME`, `DB_PATH` | Optional (defaults exist) |
-| **Email** | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` | Optional |
-| **Stripe** | `STRIPE_SECRET_KEY`, `STRIPE_PUBLISHABLE_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRO_PRICE_ID`, `STRIPE_ENTERPRISE_PRICE_ID` | For billing |
-| **AI** | `OPENAI_API_KEY`, `VIRUSTOTAL_API_KEY`, `SAFE_BROWSING_API_KEY` | Optional |
-| **Hardware** | `RFID_HOST`, `RFID_PORT`, `PORTABLE` | Optional |
-| **Runtime** | `NODE_ENV`, `PRODUCTION_MODE`, `ENABLE_AI_TOXICITY`, `ENABLE_VPN_DETECTION`, `ENABLE_WEB_DASHBOARD` | Optional |
-
----
-
-## 11. Security Audit Findings
+## 10. Security Audit Findings
 
 ### CRITICAL
 
@@ -1013,7 +946,7 @@ The production deployment uses **Cloudflare Tunnel** running on the Raspberry Pi
 
 ---
 
-## 12. File Structure Reference
+## 11. File Structure Reference
 
 ```
 ├── src/
@@ -1095,81 +1028,7 @@ The production deployment uses **Cloudflare Tunnel** running on the Raspberry Pi
 └── start-bot.js                       # Hardware watchdog launcher
 ```
 
----
-
-## Quick Start
-
-```bash
-# 1. Clone and install
-git clone https://github.com/your-repo/darklock-guard.git
-cd darklock-guard
-npm install
-
-# 2. Configure
-cp .env.example .env
-# Edit .env with your Discord bot token, client ID/secret, and secrets
-
-# 3. Interactive setup
-npm run setup
-
-# 4. Generate tamper baseline
-AUDIT_ENCRYPTION_KEY=your-key npm run tamper:generate
-
-# 5. Start the bot
-npm start
-
-# 6. Start all services (local development)
-./start-all.sh
-```
-
-## Production Deployment (Raspberry Pi 5)
-
-```bash
-# Deploy with systemd service
-sudo systemctl stop discord-bot
-git fetch origin main && git reset --hard origin/main
-AUDIT_ENCRYPTION_KEY=your-key npm run tamper:generate
-sudo systemctl start discord-bot
-
-# Verify
-systemctl is-active discord-bot
-curl -s https://admin.darklock.net/health
-```
 
 ---
 
-## Dependencies (29 production)
-
-| Package | Purpose |
-|---------|---------|
-| `discord.js` v14 | Discord API client |
-| `express` v4 | HTTP server framework |
-| `sqlite3` | Database driver |
-| `helmet` | Security headers |
-| `cors` | Cross-Origin Resource Sharing |
-| `express-rate-limit` | API rate limiting |
-| `bcrypt` | Password hashing |
-| `jsonwebtoken` | JWT authentication |
-| `speakeasy` | TOTP 2FA |
-| `qrcode` | QR code generation (2FA setup) |
-| `canvas` | Image generation (rank cards) |
-| `sharp` | Image processing |
-| `openai` | AI toxicity analysis |
-| `stripe` | Payment processing |
-| `axios` | HTTP client |
-| `ws` | WebSocket server |
-| `winston` | Logging framework |
-| `dotenv` | Environment variable loading |
-| `multer` | File upload handling |
-| `nodemailer` | Email sending |
-| `node-cron` | Scheduled tasks |
-| `chokidar` | File change watching |
-| `geoip-lite` | IP geolocation |
-| `string-similarity` | String comparison (phishing detection) |
-| `serialport` | Hardware communication |
-| `moment` | Date manipulation (legacy) |
-| `url-parse` | URL parsing |
-
----
-
-*Last updated: February 2026*
+*[darklock.net](https://darklock.net)*
