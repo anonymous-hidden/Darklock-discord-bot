@@ -785,6 +785,113 @@ class DarklockPlatform {
             `);
         });
 
+        // Darklock Secure Notes - Download page (URL exists, not linked from site nav)
+        this.app.get('/platform/download/darklock-notes', (req, res) => {
+            res.sendFile(path.join(__dirname, 'views/darklock-notes-download.html'));
+        });
+
+        // Darklock Secure Notes - Installer download
+        this.app.get('/platform/api/download/darklock-notes-installer', (req, res) => {
+            const format = (req.query.format || 'deb').toLowerCase();
+            const fs = require('fs');
+            const version = '0.1.0';
+            const bundleBase = path.join(__dirname, '../darklock-notes/apps/desktop/src-tauri/target/release/bundle');
+
+            console.log(`[DarklockNotes] Download request for format: ${format} from IP: ${req.ip}`);
+
+            const fileLocations = {
+                deb: [
+                    path.join(bundleBase, `deb/Darklock Notes_${version}_amd64.deb`),
+                    path.join(bundleBase, `deb/darklock-notes_${version}_amd64.deb`),
+                    path.join(__dirname, `downloads/darklock-notes_${version}_amd64.deb`),
+                    path.join(__dirname, 'downloads/darklock-notes_0.1.0_amd64.deb')
+                ],
+                appimage: [
+                    path.join(bundleBase, `appimage/Darklock Notes_${version}_amd64.AppImage`),
+                    path.join(bundleBase, `appimage/darklock-notes_${version}_amd64.AppImage`),
+                    path.join(__dirname, `downloads/darklock-notes_${version}_amd64.AppImage`),
+                    path.join(__dirname, 'downloads/darklock-notes_0.1.0_amd64.AppImage')
+                ],
+                ipa: [
+                    path.join(__dirname, `downloads/darklock-notes_${version}.ipa`),
+                    path.join(__dirname, 'downloads/darklock-notes.ipa')
+                ],
+                testflight: [] // Redirect to TestFlight invite link (update when available)
+            };
+
+            // TestFlight redirect — update TESTFLIGHT_NOTES_URL env var when the beta invite is live
+            if (format === 'testflight') {
+                const tfUrl = process.env.TESTFLIGHT_NOTES_URL || null;
+                if (tfUrl) return res.redirect(302, tfUrl);
+                return res.status(404).send(`
+                    <html>
+                        <head><title>TestFlight Beta</title>
+                        <style>
+                            body { background:#0b0f1a; color:#f8fafc; display:flex; align-items:center; justify-content:center; min-height:100vh; margin:0; font-family:system-ui; }
+                            .card { background:#111827; border:1px solid rgba(99,102,241,0.35); padding:32px; border-radius:12px; max-width:500px; text-align:center; }
+                            h2 { color:#a5b4fc; margin:0 0 12px; }
+                            p { color:#94a3b8; line-height:1.6; }
+                            a.btn { display:inline-block; margin-top:16px; padding:12px 24px; border-radius:8px; background:linear-gradient(135deg,#6366f1,#00d4ff); color:#fff; text-decoration:none; font-weight:600; }
+                        </style></head>
+                        <body>
+                            <div class="card">
+                                <h2>TestFlight Beta Coming Soon</h2>
+                                <p>The iOS beta invite link isn't live yet. Check back soon or download the IPA for sideloading.</p>
+                                <a class="btn" href="/platform/download/darklock-notes">Back to Downloads</a>
+                            </div>
+                        </body>
+                    </html>
+                `);
+            }
+
+            let searchFormats = [];
+            if (format === 'deb' || format === 'linux') {
+                searchFormats = ['deb'];
+            } else if (format === 'appimage') {
+                searchFormats = ['appimage'];
+            } else if (format === 'ipa' || format === 'ios') {
+                searchFormats = ['ipa'];
+            } else {
+                searchFormats = ['deb'];
+            }
+
+            for (const fmt of searchFormats) {
+                const locations = fileLocations[fmt] || [];
+                for (const filePath of locations) {
+                    if (fs.existsSync(filePath)) {
+                        const fileName = path.basename(filePath);
+                        console.log(`[DarklockNotes] Serving installer: ${fileName}`);
+                        return res.download(filePath, fileName);
+                    }
+                }
+            }
+
+            console.error(`[DarklockNotes] Installer not found for format: ${format}`);
+            return res.status(404).send(`
+                <html>
+                    <head>
+                        <title>Installer Not Available</title>
+                        <style>
+                            body { background:#0b0f1a; color:#f8fafc; display:flex; align-items:center; justify-content:center; min-height:100vh; margin:0; font-family:system-ui; }
+                            .card { background:#111827; border:1px solid rgba(99,102,241,0.35); padding:32px; border-radius:12px; max-width:560px; text-align:center; }
+                            h1 { margin:0 0 12px; }
+                            p { color:#94a3b8; line-height:1.6; }
+                            code { background:rgba(255,255,255,0.06); padding:2px 6px; border-radius:4px; }
+                            a.btn { display:inline-block; margin-top:16px; padding:12px 20px; border-radius:8px; background:linear-gradient(135deg,#6366f1,#00d4ff); color:#fff; text-decoration:none; }
+                        </style>
+                    </head>
+                    <body>
+                        <div class="card">
+                            <h1>Installer Not Available</h1>
+                            <p>The <strong>${format}</strong> installer has not been built yet.</p>
+                            <p>Build it with: <code>cd darklock-notes && npm run build:desktop</code></p>
+                            <a class="btn" href="/platform/download/darklock-notes">Back to Downloads</a>
+                        </div>
+                    </body>
+                </html>
+            `);
+        });
+
         // Darklock Guard - Public updates page (NO auth required)
         this.app.get('/platform/updates', async (req, res) => {
             const Q = require('./admin-v4/db/queries');
@@ -1350,8 +1457,18 @@ class DarklockPlatform {
             }
         });
         
-        // Darklock Guard - Web monitor (requires authentication)
-        this.app.get('/platform/monitor/darklock-guard', requireAuth, (req, res) => {
+        // Darklock Guard - Web monitor (requires platform user authentication)
+        this.app.get('/platform/monitor/darklock-guard', (req, res) => {
+            const token = req.cookies?.darklock_token;
+            if (!token) return res.redirect('/platform/auth/login');
+            try {
+                const jwt = require('jsonwebtoken');
+                const { requireEnv } = require('./utils/env-validator');
+                jwt.verify(token, requireEnv('JWT_SECRET'));
+            } catch {
+                res.clearCookie('darklock_token');
+                return res.redirect('/platform/auth/login');
+            }
             res.sendFile(path.join(__dirname, 'views/monitor.html'));
         });
 
@@ -1769,6 +1886,9 @@ class DarklockPlatform {
         this.app.get('/site/pricing', (req, res) => {
             res.sendFile(path.join(siteViewsDir, 'pricing.html'));
         });
+        this.app.get('/site/updates', (req, res) => {
+            res.sendFile(path.join(siteViewsDir, 'updates.html'));
+        });
         this.app.get('/site/add-bot', (req, res) => {
             res.sendFile(path.join(siteViewsDir, 'add-bot.html'));
         });
@@ -1847,6 +1967,7 @@ class DarklockPlatform {
                         banner: user.banner || null,
                         displayName: user.display_name || user.username,
                         twoFactorEnabled: !!user.two_factor_enabled,
+                        oauthProvider: user.oauth_provider || null,
                         createdAt: user.created_at,
                         lastLogin: user.last_login,
                         language: settings.language || 'en',
@@ -2172,8 +2293,18 @@ class DarklockPlatform {
             `);
         });
         
-        // Darklock Guard - Web Monitor (requires authentication)
-        existingApp.get('/platform/monitor/darklock-guard', requireAuth, (req, res) => {
+        // Darklock Guard - Web Monitor (requires platform user authentication)
+        existingApp.get('/platform/monitor/darklock-guard', (req, res) => {
+            const token = req.cookies?.darklock_token;
+            if (!token) return res.redirect('/platform/auth/login');
+            try {
+                const jwt = require('jsonwebtoken');
+                const { requireEnv } = require('./utils/env-validator');
+                jwt.verify(token, requireEnv('JWT_SECRET'));
+            } catch {
+                res.clearCookie('darklock_token');
+                return res.redirect('/platform/auth/login');
+            }
             res.sendFile(path.join(__dirname, 'views/monitor.html'));
         });
         
@@ -2445,6 +2576,7 @@ class DarklockPlatform {
                         banner: user.banner || null,
                         displayName: user.display_name || user.username,
                         twoFactorEnabled: !!user.two_factor_enabled,
+                        oauthProvider: user.oauth_provider || null,
                         createdAt: user.created_at,
                         lastLogin: user.last_login,
                         language: settings.language || 'en',
