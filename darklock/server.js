@@ -2168,6 +2168,79 @@ class DarklockPlatform {
             });
         });
 
+        // Darklock Secure Notes - Download page (URL accessible, not linked from nav)
+        existingApp.get('/platform/download/darklock-notes', (req, res) => {
+            res.sendFile(path.join(__dirname, 'views/darklock-notes-download.html'));
+        });
+
+        // Darklock Secure Notes - Installer download (existingApp integration)
+        existingApp.get('/platform/api/download/darklock-notes-installer', (req, res) => {
+            const format = (req.query.format || 'deb').toLowerCase();
+            const fs = require('fs');
+            const version = '0.1.0';
+            const bundleBase = path.join(__dirname, '../darklock-notes/apps/desktop/src-tauri/target/release/bundle');
+
+            console.log(`[DarklockNotes] Download request for format: ${format} from IP: ${req.ip}`);
+
+            // TestFlight redirect
+            if (format === 'testflight') {
+                const tfUrl = process.env.TESTFLIGHT_NOTES_URL || null;
+                if (tfUrl) return res.redirect(302, tfUrl);
+                return res.redirect('/platform/download/darklock-notes');
+            }
+
+            const fileLocations = {
+                deb: [
+                    path.join(bundleBase, `deb/Darklock Notes_${version}_amd64.deb`),
+                    path.join(bundleBase, `deb/darklock-notes_${version}_amd64.deb`),
+                    path.join(__dirname, `downloads/darklock-notes_${version}_amd64.deb`),
+                    path.join(__dirname, 'downloads/darklock-notes_0.1.0_amd64.deb')
+                ],
+                appimage: [
+                    path.join(bundleBase, `appimage/Darklock Notes_${version}_amd64.AppImage`),
+                    path.join(bundleBase, `appimage/darklock-notes_${version}_amd64.AppImage`),
+                    path.join(__dirname, `downloads/darklock-notes_${version}_amd64.AppImage`),
+                    path.join(__dirname, 'downloads/darklock-notes_0.1.0_amd64.AppImage')
+                ],
+                ipa: [
+                    path.join(__dirname, `downloads/darklock-notes_${version}.ipa`),
+                    path.join(__dirname, 'downloads/darklock-notes.ipa')
+                ]
+            };
+
+            let searchFormats = [];
+            if (format === 'deb' || format === 'linux') searchFormats = ['deb'];
+            else if (format === 'appimage') searchFormats = ['appimage'];
+            else if (format === 'ipa' || format === 'ios') searchFormats = ['ipa'];
+            else searchFormats = ['deb'];
+
+            for (const fmt of searchFormats) {
+                for (const filePath of (fileLocations[fmt] || [])) {
+                    if (fs.existsSync(filePath)) {
+                        console.log(`[DarklockNotes] Serving installer: ${path.basename(filePath)}`);
+                        return res.download(filePath, path.basename(filePath));
+                    }
+                }
+            }
+
+            console.error(`[DarklockNotes] Installer not found for format: ${format}`);
+            return res.status(404).send(`
+                <html>
+                    <head><title>Installer Not Available</title>
+                    <style>body{background:#0b0f1a;color:#f8fafc;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;font-family:system-ui}.card{background:#111827;border:1px solid rgba(99,102,241,.35);padding:32px;border-radius:12px;max-width:560px;text-align:center}h1{margin:0 0 12px}p{color:#94a3b8;line-height:1.6}code{background:rgba(255,255,255,.06);padding:2px 6px;border-radius:4px}a.btn{display:inline-block;margin-top:16px;padding:12px 20px;border-radius:8px;background:linear-gradient(135deg,#6366f1,#00d4ff);color:#fff;text-decoration:none}</style>
+                    </head>
+                    <body>
+                        <div class="card">
+                            <h1>Installer Not Available</h1>
+                            <p>The <strong>${format}</strong> installer has not been built yet.</p>
+                            <p>Build it with: <code>cd darklock-notes && npm run build:desktop</code></p>
+                            <a class="btn" href="/platform/download/darklock-notes">Back to Downloads</a>
+                        </div>
+                    </body>
+                </html>
+            `);
+        });
+
         // Darklock Guard - Actual installer download (existingApp integration)
         existingApp.get('/platform/api/download/darklock-guard-installer', (req, res) => {
             const format = (req.query.format || 'deb').toLowerCase();
