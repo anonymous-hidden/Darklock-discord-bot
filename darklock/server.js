@@ -785,6 +785,13 @@ class DarklockPlatform {
             `);
         });
 
+        // Darklock Secure Notes - Web App (PWA, installable on iOS/Android)
+        const notesWebDist = path.join(__dirname, '../darklock-notes/apps/web/dist');
+        this.app.use('/platform/notes', express.static(notesWebDist));
+        this.app.get('/platform/notes/*', (req, res) => {
+            res.sendFile(path.join(notesWebDist, 'index.html'));
+        });
+
         // Darklock Secure Notes - Download page (URL exists, not linked from site nav)
         this.app.get('/platform/download/darklock-notes', (req, res) => {
             res.sendFile(path.join(__dirname, 'views/darklock-notes-download.html'));
@@ -2176,6 +2183,13 @@ class DarklockPlatform {
                     if (!res.headersSent) res.status(500).send('Error loading page');
                 }
             });
+        });
+
+        // Darklock Secure Notes - Web App (PWA, installable on iOS/Android)
+        const notesWebDist = path.join(__dirname, '../darklock-notes/apps/web/dist');
+        existingApp.use('/platform/notes', express.static(notesWebDist));
+        existingApp.get('/platform/notes/*', (req, res) => {
+            res.sendFile(path.join(notesWebDist, 'index.html'));
         });
 
         // Darklock Secure Notes - Download page (URL accessible, not linked from nav)
