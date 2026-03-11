@@ -790,6 +790,16 @@ class DarklockPlatform {
             res.sendFile(path.join(__dirname, 'views/darklock-notes-download.html'));
         });
 
+        // Darklock Secure Notes - Web Monitor
+        this.app.get('/platform/monitor/darklock-notes', (req, res) => {
+            res.sendFile(path.join(__dirname, 'views/notes-monitor.html'));
+        });
+
+        // Darklock Secure Notes - Monitor status API (instances push data here)
+        this.app.get('/platform/api/notes/monitor/status', (req, res) => {
+            res.json({ instances: [], events: [], lastSync: null });
+        });
+
         // Darklock Secure Notes - Installer download
         this.app.get('/platform/api/download/darklock-notes-installer', (req, res) => {
             const format = (req.query.format || 'deb').toLowerCase();
@@ -2171,6 +2181,16 @@ class DarklockPlatform {
         // Darklock Secure Notes - Download page (URL accessible, not linked from nav)
         existingApp.get('/platform/download/darklock-notes', (req, res) => {
             res.sendFile(path.join(__dirname, 'views/darklock-notes-download.html'));
+        });
+
+        // Darklock Secure Notes - Web Monitor
+        existingApp.get('/platform/monitor/darklock-notes', (req, res) => {
+            res.sendFile(path.join(__dirname, 'views/notes-monitor.html'));
+        });
+
+        // Darklock Secure Notes - Monitor status API (instances push data here)
+        existingApp.get('/platform/api/notes/monitor/status', (req, res) => {
+            res.json({ instances: [], events: [], lastSync: null });
         });
 
         // Darklock Secure Notes - Installer download (existingApp integration)

@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Darklock Secure Notes - Web Monitor</title>
+    <link rel="stylesheet" href="/platform/static/css/main.css">
+    <link rel="icon" type="image/png" href="/platform/static/icons/darklock-guard.png" sizes="256x256">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: var(--bg-primary, #020617); min-height: 100vh; font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; }
+
+        .monitor-nav { position: fixed; top: 0; left: 0; right: 0; height: 64px; background: rgba(2, 6, 23, 0.85); backdrop-filter: blur(16px); border-bottom: 1px solid var(--border-color, #1e293b); display: flex; align-items: center; padding: 0 1.5rem; z-index: 100; }
+        .monitor-nav .nav-brand { display: flex; align-items: center; gap: 0.75rem; text-decoration: none; color: var(--text-primary, #f1f5f9); font-weight: 700; font-size: 1.125rem; }
+        .monitor-nav .nav-brand .brand-icon { width: 32px; height: 32px; border-radius: 8px; background: linear-gradient(135deg, #6366f1, #8b5cf6); display: flex; align-items: center; justify-content: center; color: #fff; font-size: 0.875rem; }
+        .nav-breadcrumb { display: flex; align-items: center; gap: 0.5rem; margin-left: 1.5rem; color: var(--text-muted, #64748b); font-size: 0.875rem; }
+        .nav-breadcrumb a { color: var(--text-secondary, #94a3b8); text-decoration: none; }
+        .nav-breadcrumb a:hover { color: var(--text-primary, #f1f5f9); }
+        .nav-breadcrumb .sep { color: var(--text-muted, #475569); }
+        .nav-actions { margin-left: auto; display: flex; align-items: center; gap: 0.75rem; }
+        .nav-actions .btn { display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.5rem 1rem; border-radius: 8px; font-size: 0.8125rem; font-weight: 500; text-decoration: none; cursor: pointer; border: none; transition: all 0.2s; }
+        .btn-back { background: var(--bg-secondary, #1e293b); color: var(--text-secondary, #94a3b8); border: 1px solid var(--border-color, #1e293b) !important; }
+        .btn-back:hover { background: var(--bg-hover, #334155); color: var(--text-primary, #f1f5f9); }
+        .btn-refresh { background: linear-gradient(135deg, #6366f1, #8b5cf6); color: white; }
+        .btn-refresh:hover { filter: brightness(1.1); transform: translateY(-1px); }
+        .btn-refresh.spinning svg { animation: spin 1s linear infinite; }
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+        .monitor-content { max-width: 1280px; margin: 0 auto; padding: 96px 1.5rem 3rem; }
+
+        .monitor-hero { display: flex; align-items: center; gap: 1.5rem; padding: 2rem; background: linear-gradient(135deg, rgba(99,102,241,0.05), rgba(139,92,246,0.05)); border: 1px solid rgba(99,102,241,0.15); border-radius: 16px; margin-bottom: 2rem; }
+        .monitor-hero-icon { width: 72px; height: 72px; border-radius: 16px; background: linear-gradient(135deg, rgba(99,102,241,0.15), rgba(139,92,246,0.15)); display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 2rem; color: #818cf8; }
+        .monitor-hero-content h1 { font-size: 1.75rem; font-weight: 700; color: var(--text-primary, #f1f5f9); margin-bottom: 0.375rem; display: flex; align-items: center; gap: 0.75rem; }
+        .monitor-hero-content p { color: var(--text-secondary, #94a3b8); font-size: 0.875rem; line-height: 1.6; }
+
+        .beta-badge { display: inline-flex; align-items: center; gap: 0.375rem; padding: 0.25rem 0.75rem; border-radius: 20px; font-size: 0.6875rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; background: rgba(99,102,241,0.1); border: 1px solid rgba(99,102,241,0.35); color: #818cf8; }
+        .live-badge { display: inline-flex; align-items: center; gap: 0.375rem; padding: 0.25rem 0.75rem; border-radius: 20px; font-size: 0.6875rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+        .live-badge.active { background: rgba(52,211,153,0.1); border: 1px solid rgba(52,211,153,0.3); color: #34d399; }
+        .live-badge.inactive { background: rgba(100,116,139,0.1); border: 1px solid rgba(100,116,139,0.3); color: #94a3b8; }
+        .live-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; box-shadow: 0 0 8px currentColor; animation: livePulse 2s ease-in-out infinite; }
+        @keyframes livePulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+        .monitor-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 2rem; }
+        .monitor-stat-card { background: var(--bg-secondary, #1e293b); border: 1px solid var(--border-color, #1e293b); border-radius: 12px; padding: 1.25rem; text-align: center; transition: border-color 0.2s; }
+        .monitor-stat-card:hover { border-color: rgba(99,102,241,0.3); }
+        .monitor-stat-value { font-size: 2rem; font-weight: 700; background: linear-gradient(135deg, #818cf8, #a78bfa); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+        .monitor-stat-value.success { background: linear-gradient(135deg, #34d399, #22d3ee); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+        .monitor-stat-value.warning { background: linear-gradient(135deg, #fbbf24, #f59e0b); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+        .monitor-stat-value.danger { background: linear-gradient(135deg, #f87171, #ef4444); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+        .monitor-stat-label { font-size: 0.75rem; color: var(--text-muted, #64748b); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 0.375rem; }
+
+        .architecture-info { background: rgba(99,102,241,0.04); border: 1px solid rgba(99,102,241,0.12); border-left: 3px solid #6366f1; border-radius: 8px; padding: 1rem 1.25rem; margin-bottom: 2rem; display: flex; gap: 0.75rem; align-items: flex-start; font-size: 0.8125rem; line-height: 1.6; color: var(--text-secondary, #94a3b8); }
+        .architecture-info svg { width: 18px; height: 18px; color: #818cf8; flex-shrink: 0; margin-top: 1px; }
+        .architecture-info strong { color: #818cf8; }
+
+        .section-card { background: var(--bg-secondary, #1e293b); border: 1px solid var(--border-color, #1e293b); border-radius: 12px; margin-bottom: 1.5rem; overflow: hidden; }
+        .section-card-header { display: flex; align-items: center; justify-content: space-between; padding: 1.25rem 1.5rem; border-bottom: 1px solid var(--border-color, #1e293b); }
+        .section-card-header h2 { font-size: 1.125rem; font-weight: 600; color: var(--text-primary, #f1f5f9); display: flex; align-items: center; gap: 0.75rem; }
+        .section-card-header h2 svg { width: 20px; height: 20px; color: #818cf8; }
+        .section-card-body { padding: 1.5rem; }
+
+        .instance-card { background: var(--bg-primary, #0f172a); border: 1px solid var(--border-color, #1e293b); border-radius: 10px; padding: 1.5rem; margin-bottom: 1rem; transition: all 0.2s; }
+        .instance-card:last-child { margin-bottom: 0; }
+        .instance-card:hover { border-color: rgba(99,102,241,0.25); box-shadow: 0 4px 12px rgba(0,0,0,0.2); }
+        .instance-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem; }
+        .instance-name-area { display: flex; align-items: center; gap: 0.75rem; }
+        .instance-icon-circle { width: 40px; height: 40px; border-radius: 10px; background: rgba(99,102,241,0.1); display: flex; align-items: center; justify-content: center; color: #818cf8; font-size: 1.1rem; }
+        .instance-name-text { font-weight: 600; color: var(--text-primary, #f1f5f9); }
+        .instance-platform { font-size: 0.75rem; color: var(--text-muted, #64748b); }
+        .status-pill { padding: 0.25rem 0.875rem; border-radius: 20px; font-size: 0.6875rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; display: inline-flex; align-items: center; gap: 0.375rem; }
+        .status-pill.active { background: rgba(52,211,153,0.1); border: 1px solid rgba(52,211,153,0.3); color: #34d399; }
+        .status-pill.offline { background: rgba(100,116,139,0.1); border: 1px solid rgba(100,116,139,0.3); color: #94a3b8; }
+        .status-pill .pill-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+        .instance-stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.75rem; margin-bottom: 1.25rem; }
+        .instance-stat-box { text-align: center; padding: 0.875rem 0.5rem; background: var(--bg-secondary, #1e293b); border-radius: 8px; border: 1px solid var(--border-color, #1e293b); }
+        .instance-stat-num { font-size: 1.375rem; font-weight: 700; color: var(--text-primary, #f1f5f9); }
+        .instance-stat-num.green { color: #34d399; }
+        .instance-stat-num.purple { color: #a78bfa; }
+        .instance-stat-text { font-size: 0.6875rem; color: var(--text-muted, #64748b); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 0.25rem; }
+        .instance-meta-row { display: flex; flex-wrap: wrap; gap: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--border-color, #1e293b); font-size: 0.75rem; color: var(--text-muted, #64748b); }
+        .instance-meta-row span { display: flex; align-items: center; gap: 0.375rem; }
+        .instance-meta-row svg { width: 14px; height: 14px; }
+
+        .log-entries { max-height: 400px; overflow-y: auto; }
+        .log-item { display: flex; align-items: flex-start; gap: 0.75rem; padding: 0.875rem 1rem; background: var(--bg-primary, #0f172a); border-radius: 8px; margin-bottom: 0.5rem; border-left: 3px solid #6366f1; transition: background 0.2s; }
+        .log-item:hover { background: var(--bg-hover, #0f1729); }
+        .log-item.warning { border-left-color: #fbbf24; }
+        .log-item.error { border-left-color: #f87171; }
+        .log-item.success { border-left-color: #34d399; }
+        .log-item-time { font-size: 0.6875rem; color: var(--text-muted, #475569); white-space: nowrap; min-width: 70px; }
+        .log-item-msg { font-size: 0.8125rem; color: var(--text-primary, #e2e8f0); line-height: 1.5; }
+
+        .empty-state { text-align: center; padding: 4rem 2rem; color: var(--text-secondary, #94a3b8); }
+        .empty-state .empty-icon { font-size: 4rem; margin-bottom: 1.5rem; opacity: 0.2; color: #818cf8; }
+        .empty-state h3 { font-size: 1.25rem; font-weight: 600; color: var(--text-primary, #f1f5f9); margin-bottom: 0.75rem; }
+        .empty-state p { max-width: 420px; margin: 0 auto 1.5rem; line-height: 1.7; font-size: 0.875rem; }
+        .download-btn { display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.875rem 1.75rem; background: linear-gradient(135deg, #6366f1, #8b5cf6); color: white; font-weight: 600; font-size: 0.9375rem; border: none; border-radius: 10px; text-decoration: none; cursor: pointer; transition: all 0.2s; box-shadow: 0 4px 16px rgba(99,102,241,0.3); }
+        .download-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(99,102,241,0.4); }
+        .download-btn svg { width: 20px; height: 20px; }
+
+        @media (max-width: 768px) { .monitor-stats { grid-template-columns: repeat(2, 1fr); } .instance-stats-grid { grid-template-columns: repeat(2, 1fr); } .monitor-hero { flex-direction: column; text-align: center; } .nav-breadcrumb { display: none; } }
+        @media (max-width: 480px) { .monitor-stats { grid-template-columns: 1fr; } }
+    </style>
+</head>
+<body>
+    <nav class="monitor-nav">
+        <a href="/platform" class="nav-brand">
+            <div class="brand-icon">&#xf249;</div>
+            <span>Darklock</span>
+        </a>
+        <div class="nav-breadcrumb">
+            <span class="sep">/</span>
+            <a href="/platform/download/darklock-notes">Secure Notes</a>
+            <span class="sep">/</span>
+            <span>Monitor</span>
+        </div>
+        <div class="nav-actions">
+            <a href="/platform/download/darklock-notes" class="btn btn-back">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5"/><polyline points="12 19 5 12 12 5"/></svg>
+                Downloads
+            </a>
+            <button class="btn btn-refresh" id="refreshBtn" onclick="refreshData()">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+                Refresh
+            </button>
+        </div>
+    </nav>
+
+    <div class="monitor-content">
+        <div class="monitor-hero">
+            <div class="monitor-hero-icon">&#xf249;</div>
+            <div class="monitor-hero-content">
+                <h1>
+                    Secure Notes Monitor
+                    <span class="beta-badge">Beta</span>
+                    <span class="live-badge inactive" id="liveBadge">
+                        <span class="live-dot"></span>
+                        <span id="liveText">Connecting</span>
+                    </span>
+                </h1>
+                <p>Real-time sync status from your connected Darklock Secure Notes instances. All encryption and note data stays on your device &mdash; this dashboard is read-only.</p>
+            </div>
+        </div>
+
+        <div class="monitor-stats" id="monitorStats">
+            <div class="monitor-stat-card">
+                <div class="monitor-stat-value" id="totalInstances">0</div>
+                <div class="monitor-stat-label">Instances</div>
+            </div>
+            <div class="monitor-stat-card">
+                <div class="monitor-stat-value success" id="totalNotes">0</div>
+                <div class="monitor-stat-label">Notes Synced</div>
+            </div>
+            <div class="monitor-stat-card">
+                <div class="monitor-stat-value" id="totalEncrypted">0</div>
+                <div class="monitor-stat-label">Encrypted</div>
+            </div>
+            <div class="monitor-stat-card">
+                <div class="monitor-stat-value warning" id="totalPending">0</div>
+                <div class="monitor-stat-label">Pending Sync</div>
+            </div>
+        </div>
+
+        <div class="architecture-info">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+            <div><strong>Zero-Knowledge Architecture:</strong> All notes are encrypted <strong>on your device</strong> before syncing. Darklock servers never have access to your note contents, keys, or plaintext data. This monitor only displays metadata pushed from connected app instances.</div>
+        </div>
+
+        <div class="section-card">
+            <div class="section-card-header">
+                <h2>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
+                    Connected Instances
+                </h2>
+                <span id="instanceCount" style="font-size: 0.875rem; color: var(--text-muted);">0 instances</span>
+            </div>
+            <div class="section-card-body" id="instancesList">
+                <div class="empty-state" style="padding: 2rem;"><p>Loading instance status...</p></div>
+            </div>
+        </div>
+
+        <div class="section-card">
+            <div class="section-card-header">
+                <h2>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                    Sync Activity
+                </h2>
+                <span style="font-size: 0.6875rem; padding: 0.25rem 0.625rem; background: rgba(99,102,241,0.1); border: 1px solid rgba(99,102,241,0.3); border-radius: 12px; color: #818cf8; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">End-to-End Encrypted</span>
+            </div>
+            <div class="section-card-body">
+                <div class="log-entries" id="activityLog"></div>
+                <div style="font-size: 0.75rem; color: var(--text-muted); text-align: center; margin-top: 1rem; padding-top: 0.75rem; border-top: 1px solid var(--border-color, #1e293b);" id="lastSyncTime">Waiting for instance sync...</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        async function loadStatus() {
+            try {
+                const response = await fetch('/platform/api/notes/monitor/status', { credentials: 'include' });
+                if (response.ok) {
+                    const data = await response.json();
+                    renderInstances(data.instances || []);
+                    renderActivityLog(data.events || []);
+                    updateSummaryStats(data.instances || []);
+                    updateLastSync(data.lastSync);
+                    updateLiveBadge(data.instances || []);
+                } else {
+                    renderEmptyState();
+                    updateLiveBadge([]);
+                }
+            } catch (err) {
+                renderEmptyState();
+                updateLiveBadge([]);
+            }
+        }
+
+        function updateLiveBadge(instances) {
+            const badge = document.getElementById('liveBadge');
+            const text = document.getElementById('liveText');
+            const hasActive = instances.some(i => i.status === 'active');
+            badge.className = hasActive ? 'live-badge active' : 'live-badge inactive';
+            text.textContent = hasActive ? 'Live' : (instances.length > 0 ? 'Offline' : 'No Instances');
+        }
+
+        function updateSummaryStats(instances) {
+            let notes = 0, encrypted = 0, pending = 0;
+            instances.forEach(i => {
+                notes += i.notesCount || 0;
+                encrypted += i.encryptedCount || 0;
+                pending += i.pendingSync || 0;
+            });
+            document.getElementById('totalInstances').textContent = instances.length;
+            document.getElementById('totalNotes').textContent = notes.toLocaleString();
+            document.getElementById('totalEncrypted').textContent = encrypted.toLocaleString();
+            document.getElementById('totalPending').textContent = pending.toLocaleString();
+            document.getElementById('instanceCount').textContent = instances.length + ' instance' + (instances.length !== 1 ? 's' : '');
+        }
+
+        function renderInstances(instances) {
+            const container = document.getElementById('instancesList');
+            if (!instances || instances.length === 0) { renderEmptyState(); return; }
+            container.innerHTML = instances.map(inst => `
+                <div class="instance-card">
+                    <div class="instance-card-header">
+                        <div class="instance-name-area">
+                            <div class="instance-icon-circle">&#xf249;</div>
+                            <div>
+                                <div class="instance-name-text">${escapeHtml(inst.name || 'Unknown Instance')}</div>
+                                <div class="instance-platform">${escapeHtml(inst.platform || 'Unknown Platform')}</div>
+                            </div>
+                        </div>
+                        <span class="status-pill ${inst.status}"><span class="pill-dot"></span>${inst.status === 'active' ? 'Online' : 'Offline'}</span>
+                    </div>
+                    <div class="instance-stats-grid">
+                        <div class="instance-stat-box"><div class="instance-stat-num purple">${inst.notesCount || 0}</div><div class="instance-stat-text">Notes</div></div>
+                        <div class="instance-stat-box"><div class="instance-stat-num green">${inst.encryptedCount || 0}</div><div class="instance-stat-text">Encrypted</div></div>
+                        <div class="instance-stat-box"><div class="instance-stat-num">${inst.pendingSync || 0}</div><div class="instance-stat-text">Pending</div></div>
+                        <div class="instance-stat-box"><div class="instance-stat-num">${inst.notebooks || 0}</div><div class="instance-stat-text">Notebooks</div></div>
+                    </div>
+                    <div class="instance-meta-row">
+                        <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>Last sync: ${inst.lastSync || 'Never'}</span>
+                        <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>E2E Key: ${inst.keyFingerprint ? inst.keyFingerprint.substring(0, 12) + '…' : 'Not set'}</span>
+                        <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>App v${inst.appVersion || '?.?.?'}</span>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function renderEmptyState() {
+            document.getElementById('instancesList').innerHTML = `
+                <div class="empty-state">
+                    <div class="empty-icon">&#xf249;</div>
+                    <h3>No Instances Connected</h3>
+                    <p>Install Darklock Secure Notes on your device to start syncing. This monitor will display real-time sync status once the app is connected.</p>
+                    <a href="/platform/download/darklock-notes" class="download-btn">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                        Download Secure Notes
+                    </a>
+                </div>`;
+            document.getElementById('activityLog').innerHTML = `<div class="empty-state" style="padding: 2rem;"><div class="empty-icon" style="font-size:2.5rem;">&#xf017;</div><p>Sync activity will appear here once an instance is connected.</p></div>`;
+            updateSummaryStats([]);
+        }
+
+        function renderActivityLog(events) {
+            const container = document.getElementById('activityLog');
+            if (!events || events.length === 0) {
+                container.innerHTML = '<div class="empty-state" style="padding: 2rem;"><p>No recent sync activity from connected instances.</p></div>';
+                return;
+            }
+            container.innerHTML = events.map(e => `<div class="log-item ${e.severity || ''}"><span class="log-item-time">${formatLogTime(e.timestamp)}</span><span class="log-item-msg">${escapeHtml(e.message || '')}</span></div>`).join('');
+        }
+
+        function updateLastSync(ts) {
+            const el = document.getElementById('lastSyncTime');
+            el.textContent = ts ? 'Last sync: ' + new Date(ts).toLocaleString() : 'Waiting for instance sync...';
+        }
+
+        function formatLogTime(ts) { if (!ts) return ''; return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
+        function escapeHtml(str) { const d = document.createElement('div'); d.textContent = str; return d.innerHTML; }
+        async function refreshData() { const btn = document.getElementById('refreshBtn'); btn.classList.add('spinning'); await loadStatus(); setTimeout(() => btn.classList.remove('spinning'), 600); }
+
+        loadStatus();
+        setInterval(loadStatus, 30000);
+    </script>
+</body>
+</html>

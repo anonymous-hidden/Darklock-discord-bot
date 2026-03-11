@@ -359,7 +359,7 @@ img { max-width: 100%; display: block; }
     transition: all .3s; overflow: hidden;
 }
 .app-card::before {
-    content: ''; position: absolute; inset: 0; opacity: 0;
+    content: ''; position: absolute; inset: 0; opacity: 0; pointer-events: none;
     background: radial-gradient(500px circle at var(--mouse-x, 50%) var(--mouse-y, 50%),
         rgba(99,102,241,0.05), transparent 60%);
     transition: opacity .3s;
@@ -380,6 +380,11 @@ img { max-width: 100%; display: block; }
 .app-status.live { background: rgba(34,197,94,0.08); color: var(--success); }
 .app-status.live .dot {
     width: 5px; height: 5px; background: var(--success); border-radius: 50%;
+    animation: pulse-dot 2s infinite;
+}
+.app-status.beta { background: rgba(99,102,241,0.1); color: #818cf8; }
+.app-status.beta .dot {
+    width: 5px; height: 5px; background: #818cf8; border-radius: 50%;
     animation: pulse-dot 2s infinite;
 }
 .app-status.soon { background: rgba(245,158,11,0.08); color: var(--warning); }
