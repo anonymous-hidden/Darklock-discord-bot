@@ -245,7 +245,7 @@
         <div class="site-sect-head site-reveal">
             <span class="site-sect-badge">Pricing</span>
             <h2 class="site-sect-title">Simple, Transparent Pricing</h2>
-            <p class="site-sect-sub">Start free, then upgrade to Pro with secure Stripe checkout when you need advanced protection.</p>
+            <p class="site-sect-sub">Start free, upgrade one server with Pro, or cover every server with Enterprise.</p>
         </div>
         <div class="site-pricing-grid">
             <div class="site-price-card site-reveal site-reveal-d1">
@@ -280,6 +280,25 @@
                     <li>Webhook integrations</li>
                 </ul>
                 <a href="/payment" class="site-btn site-btn-primary site-btn-full" id="priceProBtn">Upgrade to Pro</a>
+            </div>
+            <div class="site-price-card site-reveal site-reveal-d3">
+                <div class="site-price-popular">Best Value</div>
+                <div class="site-price-header">
+                    <h3>Enterprise</h3>
+                    <div class="site-price-amount"><span class="site-price-currency">$</span>50<span class="site-price-period">/month</span></div>
+                    <p>Full access across all your servers</p>
+                </div>
+                <ul class="site-price-features">
+                    <li>Everything in Pro</li>
+                    <li>Advanced analytics dashboard</li>
+                    <li>Voice monitoring &amp; channel access control</li>
+                    <li>Trust score system</li>
+                    <li>Scheduled announcements</li>
+                    <li>XP &amp; leaderboard system</li>
+                    <li>Early access to beta features &amp; apps</li>
+                    <li>Priority support</li>
+                </ul>
+                <a href="/payment" class="site-btn site-btn-primary site-btn-full" id="priceEnterpriseBtn">Get Enterprise - $50/mo</a>
             </div>
         </div>
     </div>
@@ -351,14 +370,35 @@
     // Nav scroll
     var nav = document.getElementById('siteNav');
     window.addEventListener('scroll', function() {
-        nav.classList.toggle('scrolled', window.scrollY > 40);
+        if (nav) nav.classList.toggle('scrolled', window.scrollY > 40);
     });
 
-    // Smooth reveal
-    var observer = new IntersectionObserver(function(entries) {
-        entries.forEach(function(e) { if (e.isIntersecting) e.target.classList.add('visible'); });
-    }, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
-    document.querySelectorAll('.site-reveal').forEach(function(el) { observer.observe(el); });
+    // Smooth reveal with robust fallback so sections (including pricing)
+    // are visible even if IntersectionObserver is unavailable.
+    var reduceMotion = false;
+    try {
+        reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    } catch (_) {}
+
+    var revealEls = document.querySelectorAll('.site-reveal');
+    if (reduceMotion || !('IntersectionObserver' in window)) {
+        revealEls.forEach(function(el) { el.classList.add('visible'); });
+    } else {
+        try {
+            var observer = new IntersectionObserver(function(entries) {
+                entries.forEach(function(e) {
+                    if (e.isIntersecting) {
+                        e.target.classList.add('visible');
+                        observer.unobserve(e.target);
+                    }
+                });
+            }, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
+
+            revealEls.forEach(function(el) { observer.observe(el); });
+        } catch (_) {
+            revealEls.forEach(function(el) { el.classList.add('visible'); });
+        }
+    }
 
     // Card spotlight effect
     document.querySelectorAll('.site-feat-card, .site-price-card').forEach(function(card) {
