@@ -953,41 +953,57 @@ router.post('/api/login', rateLimitMiddleware('login'), async (req, res) => {
 });
 
 /**
- * POST /auth/logout - Handle user logout
- * Properly invalidates the session (not just cookie)
+ * Logout helper used by both POST and GET logout routes.
  */
-router.post('/logout', async (req, res) => {
+async function invalidateLoginSession(req, res) {
     try {
         const token = req.cookies?.darklock_token;
-        
+
         if (token) {
             const secret = getJwtSecret();
             try {
                 const decoded = jwt.verify(token, secret);
-                
-                // Revoke the session by jti in database
                 await db.revokeSession(decoded.jti);
             } catch (err) {
-                // Token invalid, just clear cookie
+                // Token invalid/expired; continue with cookie cleanup.
             }
         }
-        
-        // Clear the cookie
+
         clearAuthCookie(res, req);
-        
-        res.json({
-            success: true,
-            message: 'Logged out successfully',
-            redirect: '/platform'
-        });
-        
+        clearPostAuthNextCookie(res, req);
+        return true;
     } catch (err) {
         console.error('[Darklock Auth] Logout error:', err);
-        res.status(500).json({
+        return false;
+    }
+}
+
+/**
+ * POST /auth/logout - API logout endpoint
+ */
+router.post('/logout', async (req, res) => {
+    const ok = await invalidateLoginSession(req, res);
+    if (!ok) {
+        return res.status(500).json({
             success: false,
             error: 'Failed to logout'
         });
     }
+
+    return res.json({
+        success: true,
+        message: 'Logged out successfully',
+        redirect: '/platform'
+    });
+});
+
+/**
+ * GET /auth/logout - Browser compatibility route for legacy links
+ */
+router.get('/logout', async (req, res) => {
+    await invalidateLoginSession(req, res);
+    const next = sanitizeRelativeRedirectPath(req.query?.next) || '/platform/auth/login';
+    return res.redirect(next);
 });
 
 /**
@@ -997,17 +1013,17 @@ router.post('/logout', async (req, res) => {
 router.get('/me', async (req, res) => {
     try {
         const token = req.cookies?.darklock_token;
-        
+
         if (!token) {
             return res.status(401).json({
                 success: false,
                 error: 'Not authenticated'
             });
         }
-        
+
         const secret = getJwtSecret();
         const decoded = await verifyToken(token, secret);
-        
+
         if (!decoded) {
             clearAuthCookie(res, req);
             return res.status(401).json({
@@ -1015,10 +1031,9 @@ router.get('/me', async (req, res) => {
                 error: 'Session expired or invalid'
             });
         }
-        
-        // Get full user data
+
         const user = await db.getUserById(decoded.userId);
-        
+
         if (!user) {
             clearAuthCookie(res, req);
             return res.status(401).json({
@@ -1026,13 +1041,10 @@ router.get('/me', async (req, res) => {
                 error: 'User not found'
             });
         }
-        
-        // Update session last active in database
+
         await db.updateSessionActivity(decoded.jti);
-        
-        // Return user data without sensitive fields
-        // FIXED: Include all fields needed by profile/settings pages
-        res.json({
+
+        return res.json({
             success: true,
             user: {
                 id: user.id,
@@ -1053,10 +1065,9 @@ router.get('/me', async (req, res) => {
                 settings: user.settings || {}
             }
         });
-        
     } catch (err) {
         console.error('[Darklock Auth] Get user error:', err);
-        res.status(500).json({
+        return res.status(500).json({
             success: false,
             error: 'Failed to get user info'
         });

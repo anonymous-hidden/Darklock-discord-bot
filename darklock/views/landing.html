@@ -1,0 +1,749 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Darklock is a security platform for Discord communities, web apps, and digital infrastructure — detect, block, log, and recover from threats in one dashboard.">
+    <meta name="theme-color" content="#06060b">
+    <title>Darklock — Security for communities, apps, and infrastructure</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="icon" type="image/png" href="/platform/static/icons/darklock-guard.png" sizes="256x256">
+    <link rel="stylesheet" href="/platform/static/css/main.css">
+    <link rel="stylesheet" href="/platform/static/css/site-fx.css">
+    <style>
+        /* ── Landing-page specific ─────────────────────────── */
+        .lp-hero {
+            position: relative; overflow: hidden;
+            padding: 180px 24px 90px;
+            background:
+                radial-gradient(900px 460px at 78% -6%, rgba(99,102,241,0.16), transparent 70%),
+                radial-gradient(640px 360px at 8% 12%, rgba(6,182,212,0.10), transparent 70%),
+                var(--bg);
+            border-bottom: 1px solid var(--border);
+        }
+        .lp-hero::before {
+            content: ''; position: absolute; inset: 0; pointer-events: none;
+            background-image:
+                linear-gradient(rgba(129,140,248,0.05) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(129,140,248,0.05) 1px, transparent 1px);
+            background-size: 56px 56px;
+            -webkit-mask-image: radial-gradient(ellipse 90% 70% at 50% 0%, #000 35%, transparent 80%);
+            mask-image: radial-gradient(ellipse 90% 70% at 50% 0%, #000 35%, transparent 80%);
+        }
+        .lp-hero-grid {
+            position: relative; z-index: 2;
+            display: grid; grid-template-columns: 1.05fr 0.95fr;
+            gap: 56px; align-items: center;
+            max-width: 1200px; margin: 0 auto;
+        }
+        @media (max-width: 980px) { .lp-hero-grid { grid-template-columns: 1fr; gap: 44px; } }
+        .lp-hero-copy { max-width: 620px; }
+        .lp-hero h1 {
+            font-size: clamp(2.6rem, 5.6vw, 4.2rem);
+            font-weight: 800; line-height: 1.04; letter-spacing: -0.04em;
+            margin: 22px 0 20px; color: #fff;
+        }
+        .lp-hero .lp-sub {
+            font-size: 1.12rem; color: rgba(240,242,245,0.72);
+            line-height: 1.7; max-width: 540px; margin-bottom: 34px;
+        }
+        .lp-hero-actions { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 30px; }
+        .lp-hero-assure {
+            display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+            color: var(--text-muted); font-size: 0.82rem; font-weight: 500;
+        }
+        .lp-hero-assure span { display: inline-flex; align-items: center; gap: 7px; }
+        .lp-hero-assure i { color: var(--success); }
+
+        /* Hero dashboard mockup */
+        .lp-mock {
+            position: relative;
+            border-radius: 18px;
+            border: 1px solid var(--border-hover);
+            background: linear-gradient(165deg, rgba(18,18,30,0.96), rgba(10,10,18,0.94));
+            box-shadow: 0 50px 90px -38px rgba(0,0,0,0.85), inset 0 1px 0 rgba(255,255,255,0.05);
+            overflow: hidden;
+        }
+        .lp-mock-bar {
+            display: flex; align-items: center; gap: 8px;
+            padding: 13px 16px; border-bottom: 1px solid var(--border);
+            background: rgba(255,255,255,0.02);
+        }
+        .lp-mock-bar .d { width: 11px; height: 11px; border-radius: 50%; }
+        .lp-mock-bar .d.r { background: #ff5f57; }
+        .lp-mock-bar .d.y { background: #febc2e; }
+        .lp-mock-bar .d.g { background: #28c840; }
+        .lp-mock-bar .t {
+            margin-left: 8px; color: var(--text-muted);
+            font-size: 0.72rem; font-family: 'JetBrains Mono', monospace; letter-spacing: 0.03em;
+        }
+        .lp-mock-bar .st {
+            margin-left: auto; display: inline-flex; align-items: center; gap: 7px;
+            font-size: 0.68rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+            color: var(--success);
+        }
+        .lp-mock-body { padding: 18px; display: grid; gap: 14px; }
+        .lp-mock-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+        .lp-mock-stat {
+            padding: 13px 14px; border-radius: 12px;
+            border: 1px solid var(--border); background: rgba(255,255,255,0.02);
+        }
+        .lp-mock-stat .v { font-size: 1.25rem; font-weight: 800; letter-spacing: -0.02em; color: #fff; }
+        .lp-mock-stat .l {
+            font-size: 0.64rem; font-weight: 600; letter-spacing: 0.05em;
+            text-transform: uppercase; color: var(--text-muted); margin-top: 3px;
+        }
+        .lp-mock-stat.alert .v { color: var(--danger); }
+        .lp-mock-chart {
+            border: 1px solid var(--border); border-radius: 12px;
+            padding: 14px; background: rgba(255,255,255,0.02);
+        }
+        .lp-mock-chart .ch-head {
+            display: flex; align-items: center; justify-content: space-between;
+            font-size: 0.7rem; color: var(--text-muted); font-weight: 600;
+            text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 12px;
+        }
+        .lp-mock-bars { display: flex; align-items: flex-end; gap: 6px; height: 64px; }
+        .lp-mock-bars i {
+            flex: 1; border-radius: 4px 4px 0 0; display: block;
+            background: linear-gradient(180deg, rgba(129,140,248,0.85), rgba(99,102,241,0.25));
+        }
+        .lp-mock-bars i.hot { background: linear-gradient(180deg, #ef4444, rgba(239,68,68,0.25)); }
+        .lp-mock-feed { display: grid; gap: 8px; }
+        .lp-feed-row {
+            display: flex; align-items: center; gap: 10px;
+            padding: 9px 12px; border-radius: 10px;
+            border: 1px solid var(--border); background: rgba(255,255,255,0.015);
+            font-size: 0.78rem; color: #c8ccdb;
+        }
+        .lp-feed-row .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+        .lp-feed-row .dot.green { background: var(--success); }
+        .lp-feed-row .dot.blue { background: var(--cyan); }
+        .lp-feed-row .dot.red { background: var(--danger); }
+        .lp-feed-row .ago { margin-left: auto; color: var(--text-muted); font-size: 0.68rem; }
+        .lp-mock-float {
+            position: absolute; right: -14px; bottom: 38px;
+            display: flex; align-items: center; gap: 10px;
+            padding: 11px 14px; border-radius: 12px;
+            background: rgba(12,12,20,0.95);
+            border: 1px solid rgba(34,197,94,0.35);
+            box-shadow: 0 22px 44px -18px rgba(0,0,0,0.8);
+        }
+        .lp-mock-float i { color: var(--success); font-size: 1.05rem; }
+        .lp-mock-float .ft b { display: block; font-size: 0.8rem; color: #fff; }
+        .lp-mock-float .ft span { font-size: 0.68rem; color: var(--text-muted); }
+        @media (max-width: 520px) { .lp-mock-float { display: none; } }
+
+        /* Status strip */
+        .lp-strip {
+            border-bottom: 1px solid var(--border);
+            background: var(--bg-surface);
+        }
+        .lp-strip-grid {
+            display: grid; grid-template-columns: repeat(4, 1fr);
+            max-width: 1200px; margin: 0 auto;
+        }
+        @media (max-width: 720px) { .lp-strip-grid { grid-template-columns: repeat(2, 1fr); } }
+        .lp-strip-cell {
+            padding: 28px 24px; text-align: center;
+            border-right: 1px solid var(--border);
+        }
+        .lp-strip-cell:last-child { border-right: none; }
+        @media (max-width: 720px) {
+            .lp-strip-cell:nth-child(2) { border-right: none; }
+            .lp-strip-cell:nth-child(1), .lp-strip-cell:nth-child(2) { border-bottom: 1px solid var(--border); }
+        }
+        .lp-strip-cell .v {
+            font-size: 1.7rem; font-weight: 800; letter-spacing: -0.02em; color: #fff;
+            display: inline-flex; align-items: center; gap: 8px;
+        }
+        .lp-strip-cell .l {
+            font-size: 0.72rem; font-weight: 600; letter-spacing: 0.06em;
+            text-transform: uppercase; color: var(--text-muted); margin-top: 6px;
+        }
+
+        /* Generic section shell */
+        .lp-sect { padding: 110px 0; position: relative; }
+        .lp-sect.alt { background: var(--bg-surface); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+        .lp-head { max-width: 680px; margin: 0 auto 56px; text-align: center; }
+        .lp-head.left { margin-left: 0; text-align: left; }
+        .lp-head .kx {
+            display: inline-block; padding: 7px 16px; border-radius: 999px;
+            background: var(--accent-dim); border: 1px solid var(--accent-border);
+            color: #c7d2fe; font-size: 0.7rem; font-weight: 700;
+            text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 18px;
+        }
+        .lp-head h2 {
+            font-size: clamp(1.9rem, 4vw, 2.8rem); font-weight: 800;
+            letter-spacing: -0.03em; line-height: 1.1; margin-bottom: 16px;
+        }
+        .lp-head p { color: var(--text-secondary); font-size: 1.04rem; line-height: 1.7; }
+
+        /* Problem / Solution split */
+        .lp-ps { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; }
+        @media (max-width: 880px) { .lp-ps { grid-template-columns: 1fr; } }
+        .lp-ps-card {
+            border-radius: 18px; padding: 34px 32px;
+            border: 1px solid var(--border);
+            background: linear-gradient(165deg, rgba(20,20,34,0.7), rgba(13,13,22,0.7));
+        }
+        .lp-ps-card.problem { border-color: rgba(239,68,68,0.22); }
+        .lp-ps-card.solution { border-color: rgba(34,197,94,0.22); }
+        .lp-ps-tag {
+            display: inline-flex; align-items: center; gap: 9px;
+            font-size: 0.72rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+            margin-bottom: 18px;
+        }
+        .lp-ps-card.problem .lp-ps-tag { color: #fca5a5; }
+        .lp-ps-card.solution .lp-ps-tag { color: #86efac; }
+        .lp-ps-card h3 { font-size: 1.35rem; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 18px; }
+        .lp-ps-list { display: grid; gap: 14px; }
+        .lp-ps-list li { display: flex; gap: 12px; list-style: none; color: var(--text-secondary); line-height: 1.6; font-size: 0.95rem; }
+        .lp-ps-list li i { margin-top: 3px; font-size: 0.85rem; flex: none; }
+        .lp-ps-card.problem .lp-ps-list i { color: var(--danger); }
+        .lp-ps-card.solution .lp-ps-list i { color: var(--success); }
+        .lp-ps-list li strong { color: var(--text); font-weight: 600; }
+
+        /* Pillars */
+        .lp-pillars { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+        @media (max-width: 960px) { .lp-pillars { grid-template-columns: repeat(2, 1fr); } }
+        @media (max-width: 600px) { .lp-pillars { grid-template-columns: 1fr; } }
+        .lp-pillar {
+            position: relative; overflow: hidden;
+            border-radius: 16px; padding: 28px 26px;
+            border: 1px solid var(--border);
+            background: linear-gradient(165deg, rgba(20,20,34,0.9), rgba(14,14,24,0.85));
+        }
+        .lp-pillar .pi {
+            width: 48px; height: 48px; border-radius: 12px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 1.2rem; color: var(--accent-light);
+            background: rgba(99,102,241,0.12); border: 1px solid var(--accent-border);
+            margin-bottom: 16px;
+        }
+        .lp-pillar h3 { font-size: 1.1rem; font-weight: 700; letter-spacing: -0.01em; margin-bottom: 10px; }
+        .lp-pillar p { color: var(--text-secondary); font-size: 0.9rem; line-height: 1.62; margin-bottom: 14px; }
+        .lp-pillar .pm {
+            display: inline-flex; align-items: center; gap: 8px;
+            font-size: 0.74rem; font-weight: 600; color: var(--text-muted);
+            padding-top: 14px; border-top: 1px solid var(--border);
+        }
+        .lp-pillar .pm i { color: var(--accent-light); font-size: 0.42rem; }
+        .lp-pillar:nth-child(2) .pi { background: rgba(167,139,250,0.14); border-color: rgba(167,139,250,0.24); color: #c4b5fd; }
+        .lp-pillar:nth-child(3) .pi { background: rgba(6,182,212,0.14); border-color: rgba(6,182,212,0.24); color: #67e8f9; }
+        .lp-pillar:nth-child(4) .pi { background: rgba(239,68,68,0.13); border-color: rgba(239,68,68,0.24); color: #fca5a5; }
+        .lp-pillar:nth-child(5) .pi { background: rgba(34,197,94,0.13); border-color: rgba(34,197,94,0.24); color: #86efac; }
+        .lp-pillar:nth-child(6) .pi { background: rgba(245,158,11,0.13); border-color: rgba(245,158,11,0.24); color: #fcd34d; }
+
+        /* Dashboard preview split */
+        .lp-preview { display: grid; grid-template-columns: 1fr 1.1fr; gap: 52px; align-items: center; }
+        @media (max-width: 920px) { .lp-preview { grid-template-columns: 1fr; gap: 40px; } }
+        .lp-preview-copy h2 { font-size: clamp(1.8rem, 3.6vw, 2.5rem); font-weight: 800; letter-spacing: -0.03em; line-height: 1.12; margin-bottom: 18px; }
+        .lp-preview-copy p { color: var(--text-secondary); line-height: 1.72; margin-bottom: 26px; }
+        .lp-check { display: grid; gap: 14px; margin-bottom: 30px; }
+        .lp-check li { display: flex; gap: 12px; list-style: none; color: var(--text-secondary); font-size: 0.94rem; line-height: 1.55; }
+        .lp-check li i { color: var(--accent-light); margin-top: 3px; flex: none; }
+        .lp-check li b { color: var(--text); font-weight: 600; }
+
+        /* Trust band */
+        .lp-trust-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+        @media (max-width: 880px) { .lp-trust-grid { grid-template-columns: repeat(2, 1fr); } }
+        @media (max-width: 480px) { .lp-trust-grid { grid-template-columns: 1fr; } }
+        .lp-trust-card {
+            border-radius: 14px; padding: 24px 22px;
+            border: 1px solid var(--border); background: rgba(255,255,255,0.02);
+        }
+        .lp-trust-card i { font-size: 1.2rem; color: var(--accent-light); margin-bottom: 14px; display: block; }
+        .lp-trust-card h4 { font-size: 1rem; font-weight: 700; margin-bottom: 8px; }
+        .lp-trust-card p { font-size: 0.85rem; color: var(--text-secondary); line-height: 1.6; }
+    </style>
+</head>
+<body>
+
+<!-- Navigation -->
+<nav class="nav" id="mainNav">
+    <div class="nav-inner">
+        <a href="/" class="nav-brand" aria-label="Darklock home">
+            <img src="/platform/static/icons/darklock-logo.png" alt="Darklock">
+            <span>Darklock</span>
+        </a>
+        <span class="nav-user" id="navUser">Signed in as <span class="name" id="navUsername">User</span></span>
+        <div class="nav-links" id="navLinks">
+            <a href="/platform">Platform</a>
+            <a href="/site/">Discord Bot</a>
+            <a href="/platform/ridgeline">Ridgeline</a>
+            <a href="/platform/status">Status</a>
+            <a href="/platform/auth/login" id="navSignin">Sign In</a>
+            <a href="/platform/auth/signup" class="btn-cta" id="navSignup">Get Started</a>
+            <a href="/platform/dashboard" class="btn-cta" id="navDash" style="display:none">Dashboard</a>
+        </div>
+        <button class="nav-toggle" id="navToggle" aria-label="Toggle menu" aria-expanded="false">
+            <i class="fas fa-bars"></i>
+        </button>
+    </div>
+</nav>
+
+<!-- Hero -->
+<header class="lp-hero">
+    <div class="lp-hero-grid">
+        <div class="lp-hero-copy">
+            <div class="hero-badge">
+                <span class="live-dot"></span>
+                <span>Security Platform · Bot live now</span>
+            </div>
+            <h1>Protect what you<br>built. <span class="grad">Watch it stay safe.</span></h1>
+            <p class="lp-sub">
+                Darklock secures Discord communities, web applications, and the infrastructure behind them — detecting threats, blocking attacks, logging every action, and helping you recover fast. One dashboard for protection, visibility, and response.
+            </p>
+            <div class="lp-hero-actions">
+                <a href="/platform/auth/signup" class="btn primary magnetic" id="heroSignup">
+                    <i class="fas fa-shield-halved"></i> Start Protecting Now
+                </a>
+                <a href="/platform" class="btn ghost magnetic">
+                    View Platform <i class="fas fa-arrow-right"></i>
+                </a>
+            </div>
+            <div class="lp-hero-assure">
+                <span><i class="fas fa-check-circle"></i> Free to start</span>
+                <span><i class="fas fa-check-circle"></i> No credit card</span>
+                <span><i class="fas fa-check-circle"></i> Live in minutes</span>
+            </div>
+        </div>
+
+        <div class="lp-hero-visual reveal-right">
+            <div class="lp-mock tilt-card" data-tilt-max="4" aria-hidden="true">
+                <div class="lp-mock-bar">
+                    <span class="d r"></span><span class="d y"></span><span class="d g"></span>
+                    <span class="t">darklock — control center</span>
+                    <span class="st"><span class="live-dot"></span> Protected</span>
+                </div>
+                <div class="lp-mock-body">
+                    <div class="lp-mock-stats">
+                        <div class="lp-mock-stat">
+                            <div class="v" id="mockServers">—</div>
+                            <div class="l">Systems</div>
+                        </div>
+                        <div class="lp-mock-stat">
+                            <div class="v">24/7</div>
+                            <div class="l">Monitoring</div>
+                        </div>
+                        <div class="lp-mock-stat alert">
+                            <div class="v">0</div>
+                            <div class="l">Open Threats</div>
+                        </div>
+                    </div>
+                    <div class="lp-mock-chart">
+                        <div class="ch-head"><span>Threat activity · 14d</span><span>Blocked</span></div>
+                        <div class="lp-mock-bars">
+                            <i style="height:40%"></i><i style="height:62%"></i><i style="height:30%"></i>
+                            <i style="height:78%"></i><i class="hot" style="height:95%"></i><i style="height:48%"></i>
+                            <i style="height:55%"></i><i style="height:36%"></i><i style="height:70%"></i>
+                            <i style="height:44%"></i><i style="height:60%"></i><i style="height:28%"></i>
+                        </div>
+                    </div>
+                    <div class="lp-mock-feed">
+                        <div class="lp-feed-row"><span class="dot red"></span> Raid attempt blocked · 18 accounts <span class="ago">now</span></div>
+                        <div class="lp-feed-row"><span class="dot blue"></span> Verification gate passed · 4 members <span class="ago">2m</span></div>
+                        <div class="lp-feed-row"><span class="dot green"></span> File integrity baseline verified <span class="ago">6m</span></div>
+                    </div>
+                </div>
+                <div class="lp-mock-float">
+                    <i class="fas fa-shield-check"></i>
+                    <div class="ft"><b>Threat neutralized</b><span>response in 0.3s</span></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</header>
+
+<!-- Status strip -->
+<section class="lp-strip" aria-label="Platform status">
+    <div class="lp-strip-grid">
+        <div class="lp-strip-cell">
+            <div class="v" id="stripUptime">99.9%</div>
+            <div class="l">Target Uptime</div>
+        </div>
+        <div class="lp-strip-cell">
+            <div class="v"><span class="live-dot"></span> 24/7</div>
+            <div class="l">Active Monitoring</div>
+        </div>
+        <div class="lp-strip-cell">
+            <div class="v" id="stripResponse">&lt;100ms</div>
+            <div class="l">Response Time</div>
+        </div>
+        <div class="lp-strip-cell">
+            <div class="v" id="stripSystems">—</div>
+            <div class="l">Protected Systems</div>
+        </div>
+    </div>
+</section>
+
+<!-- Problem / Solution -->
+<section class="lp-sect">
+    <div class="container">
+        <div class="lp-head reveal">
+            <span class="kx">The Reality</span>
+            <h2>Communities and apps are easy to attack,<br>hard to monitor, painful to recover.</h2>
+            <p>Most teams find out they were exposed only after the damage is done — channels nuked, members scammed, files tampered, and no clear record of what happened.</p>
+        </div>
+        <div class="lp-ps stagger">
+            <div class="lp-ps-card problem reveal glow-track">
+                <span class="lp-ps-tag"><i class="fas fa-triangle-exclamation"></i> Without Darklock</span>
+                <h3>You're reacting after the fact</h3>
+                <ul class="lp-ps-list">
+                    <li><i class="fas fa-xmark"></i><span>Raids and nukes hit faster than a human mod can respond, and <strong>cleanup takes hours</strong>.</span></li>
+                    <li><i class="fas fa-xmark"></i><span>Phishing links and scam bots reach members <strong>before anyone notices</strong>.</span></li>
+                    <li><i class="fas fa-xmark"></i><span>Config changes and file tampering go <strong>unlogged and untraceable</strong>.</span></li>
+                    <li><i class="fas fa-xmark"></i><span>Recovery means guesswork — <strong>no audit trail, no accountability</strong>.</span></li>
+                </ul>
+            </div>
+            <div class="lp-ps-card solution reveal glow-track">
+                <span class="lp-ps-tag"><i class="fas fa-shield-halved"></i> With Darklock</span>
+                <h3>You detect, block, and recover</h3>
+                <ul class="lp-ps-list">
+                    <li><i class="fas fa-check"></i><span>Automated defenses stop raids and nukes <strong>in real time, not after</strong>.</span></li>
+                    <li><i class="fas fa-check"></i><span>Phishing, spam, and scam links are <strong>filtered before members click</strong>.</span></li>
+                    <li><i class="fas fa-check"></i><span>Every action is <strong>logged, timestamped, and attributable</strong>.</span></li>
+                    <li><i class="fas fa-check"></i><span>Tamper-aware audit trails make <strong>recovery and review straightforward</strong>.</span></li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- How Darklock responds (solution flow) -->
+<section class="lp-sect alt">
+    <div class="container">
+        <div class="lp-head reveal">
+            <span class="kx">How It Works</span>
+            <h2>Detect. Block. Log. Recover.</h2>
+            <p>Darklock runs a continuous loop across everything you connect — so threats are caught early and you always have the record to act on.</p>
+        </div>
+        <div class="feat-grid stagger" style="grid-template-columns:repeat(4,1fr)">
+            <div class="feat-card reveal glow-track">
+                <div class="feat-icon"><i class="fas fa-radar"></i></div>
+                <p class="feat-kicker">Step 01</p>
+                <h3>Detect</h3>
+                <p>Behavioral signals, join velocity, and threat feeds surface attacks the moment they start.</p>
+                <div class="feat-foot"><i class="fas fa-circle"></i><span>Continuous monitoring</span></div>
+            </div>
+            <div class="feat-card reveal glow-track">
+                <div class="feat-icon"><i class="fas fa-ban"></i></div>
+                <p class="feat-kicker">Step 02</p>
+                <h3>Block</h3>
+                <p>Automated rules quarantine raiders, strip malicious links, and contain nukes before they spread.</p>
+                <div class="feat-foot"><i class="fas fa-circle"></i><span>Sub-second response</span></div>
+            </div>
+            <div class="feat-card reveal glow-track">
+                <div class="feat-icon"><i class="fas fa-file-lines"></i></div>
+                <p class="feat-kicker">Step 03</p>
+                <h3>Log</h3>
+                <p>Every action, config change, and security event is sealed into a searchable audit trail.</p>
+                <div class="feat-foot"><i class="fas fa-circle"></i><span>Forensics-ready</span></div>
+            </div>
+            <div class="feat-card reveal glow-track">
+                <div class="feat-icon"><i class="fas fa-rotate-left"></i></div>
+                <p class="feat-kicker">Step 04</p>
+                <h3>Recover</h3>
+                <p>Clear records and controlled rollback turn an incident into a quick, accountable cleanup.</p>
+                <div class="feat-foot"><i class="fas fa-circle"></i><span>Fast, traceable recovery</span></div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Product pillars -->
+<section class="lp-sect">
+    <div class="container">
+        <div class="lp-head reveal">
+            <span class="kx">What Darklock Covers</span>
+            <h2>Six layers of protection,<br>one security posture.</h2>
+            <p>From your Discord community to the files and access controls behind your infrastructure — managed from a single dashboard.</p>
+        </div>
+        <div class="lp-pillars stagger">
+            <article class="lp-pillar reveal glow-track">
+                <div class="pi"><i class="fab fa-discord"></i></div>
+                <h3>Discord Security</h3>
+                <p>Anti-raid, anti-nuke, verification gates, and auto-moderation that protect your community without slowing it down.</p>
+                <div class="pm"><i class="fas fa-circle"></i> Live now</div>
+            </article>
+            <article class="lp-pillar reveal glow-track">
+                <div class="pi"><i class="fas fa-server"></i></div>
+                <h3>Infrastructure Monitoring</h3>
+                <p>Continuous visibility into the systems you run, with health checks and alerts when something looks wrong.</p>
+                <div class="pm"><i class="fas fa-circle"></i> Always watching</div>
+            </article>
+            <article class="lp-pillar reveal glow-track">
+                <div class="pi"><i class="fas fa-file-shield"></i></div>
+                <h3>File Integrity Protection</h3>
+                <p>Baseline hashing and tamper detection catch unauthorized changes to critical files the moment they happen.</p>
+                <div class="pm"><i class="fas fa-circle"></i> Tamper-aware</div>
+            </article>
+            <article class="lp-pillar reveal glow-track">
+                <div class="pi"><i class="fas fa-satellite-dish"></i></div>
+                <h3>Threat Intelligence</h3>
+                <p>Live threat feeds and behavioral analysis identify scam domains, malicious actors, and emerging attack patterns.</p>
+                <div class="pm"><i class="fas fa-circle"></i> Continuously updated</div>
+            </article>
+            <article class="lp-pillar reveal glow-track">
+                <div class="pi"><i class="fas fa-list-check"></i></div>
+                <h3>Audit Logging</h3>
+                <p>Complete, attributable records of every action — exportable, searchable, and built for review and compliance.</p>
+                <div class="pm"><i class="fas fa-circle"></i> Every action traceable</div>
+            </article>
+            <article class="lp-pillar reveal glow-track">
+                <div class="pi"><i class="fas fa-key"></i></div>
+                <h3>Secure Access Controls</h3>
+                <p>Role-based permissions and least-privilege access make sure people only reach what they're meant to.</p>
+                <div class="pm"><i class="fas fa-circle"></i> Least-privilege by default</div>
+            </article>
+        </div>
+    </div>
+</section>
+
+<!-- Dashboard preview -->
+<section class="lp-sect alt">
+    <div class="container">
+        <div class="lp-preview">
+            <div class="lp-preview-copy reveal-left">
+                <span class="kx" style="display:inline-block;padding:7px 16px;border-radius:999px;background:var(--accent-dim);border:1px solid var(--accent-border);color:#c7d2fe;font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:18px;">One Dashboard</span>
+                <h2>Protection, visibility, and response — in one place.</h2>
+                <p>Darklock's dashboard is the control center for everything you protect. See live activity, tune your rules, review the audit trail, and respond to incidents without jumping between tools.</p>
+                <ul class="lp-check">
+                    <li><i class="fas fa-check"></i><span><b>Live threat feed</b> — see raids, spam, and phishing as they're handled.</span></li>
+                    <li><i class="fas fa-check"></i><span><b>Configurable rules</b> — set thresholds and actions that fit your community.</span></li>
+                    <li><i class="fas fa-check"></i><span><b>Searchable audit log</b> — every event timestamped and attributable.</span></li>
+                    <li><i class="fas fa-check"></i><span><b>Role-based access</b> — give your team exactly the controls they need.</span></li>
+                </ul>
+                <div class="lp-hero-actions">
+                    <a href="/platform/auth/signup" class="btn primary magnetic"><i class="fas fa-gauge-high"></i> Open the Dashboard</a>
+                    <a href="/site/" class="btn ghost magnetic">Explore the Bot</a>
+                </div>
+            </div>
+            <div class="reveal-right">
+                <div class="fx-terminal float-slow">
+                    <div class="fx-terminal-bar">
+                        <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+                        <span class="title">darklock — live security feed</span>
+                    </div>
+                    <div class="fx-terminal-body" id="lpTerminal"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Trust / security -->
+<section class="lp-sect">
+    <div class="container">
+        <div class="lp-head reveal">
+            <span class="kx">Why Trust Darklock</span>
+            <h2>Security you can verify,<br>not just claims you have to believe.</h2>
+            <p>Built on a zero-trust model where everything is verified and every action leaves a record.</p>
+        </div>
+        <div class="lp-trust-grid stagger">
+            <div class="lp-trust-card reveal glow-track">
+                <i class="fas fa-fingerprint"></i>
+                <h4>Zero-Trust by Default</h4>
+                <p>Every request is verified and every action is logged. Trust nothing, confirm everything.</p>
+            </div>
+            <div class="lp-trust-card reveal glow-track">
+                <i class="fas fa-clock-rotate-left"></i>
+                <h4>Tamper-Aware Logs</h4>
+                <p>Audit trails are sealed and attributable, so you can prove exactly what happened and when.</p>
+            </div>
+            <div class="lp-trust-card reveal glow-track">
+                <i class="fas fa-user-lock"></i>
+                <h4>Least-Privilege Access</h4>
+                <p>Role-based controls keep sensitive actions in the right hands and reduce your attack surface.</p>
+            </div>
+            <div class="lp-trust-card reveal glow-track">
+                <i class="fas fa-bolt"></i>
+                <h4>Automated Response</h4>
+                <p>Defenses act in real time, so threats are contained before they turn into cleanup work.</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Final CTA -->
+<section class="cta">
+    <div class="container">
+        <div class="cta-inner reveal">
+            <h2>Stop reacting. Start protecting.</h2>
+            <p>Add Darklock to your community in minutes, then expand protection across your apps and infrastructure from one dashboard.</p>
+            <div class="cta-btns">
+                <a href="/platform/auth/signup" class="btn primary magnetic"><i class="fas fa-shield-halved"></i> Start Protecting Now</a>
+                <a href="/platform" class="btn ghost magnetic">View the Platform</a>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Footer -->
+<footer class="footer">
+    <div class="container">
+        <div class="footer-grid">
+            <div class="footer-brand-block">
+                <div class="logo">
+                    <img src="/platform/static/icons/darklock-logo.png" alt="Darklock">
+                    <span>Darklock</span>
+                </div>
+                <p class="tagline">Security for digital communities, web applications, and the infrastructure behind them.</p>
+            </div>
+            <div class="footer-col">
+                <h4>Platform</h4>
+                <a href="/platform">Overview</a>
+                <a href="/site/">Discord Bot</a>
+                <a href="/platform/ridgeline">Ridgeline</a>
+                <a href="/platform/download/darklock-guard">Darklock Guard</a>
+            </div>
+            <div class="footer-col">
+                <h4>Resources</h4>
+                <a href="/platform/docs">Documentation</a>
+                <a href="/platform/updates">Release Notes</a>
+                <a href="/platform/status">System Status</a>
+            </div>
+            <div class="footer-col">
+                <h4>Legal</h4>
+                <a href="/platform/privacy">Privacy Policy</a>
+                <a href="/platform/terms">Terms of Service</a>
+                <a href="/platform/security">Security</a>
+            </div>
+        </div>
+        <div class="footer-bottom">
+            <p>&copy; 2026 Darklock. All rights reserved.</p>
+            <div class="footer-social">
+                <a href="https://github.com/anonymous-hidden?tab=repositories" target="_blank" rel="noopener" aria-label="GitHub"><i class="fab fa-github"></i></a>
+                <a href="https://discord.gg/Vsq9PUTrgb" target="_blank" rel="noopener" aria-label="Discord"><i class="fab fa-discord"></i></a>
+            </div>
+        </div>
+    </div>
+</footer>
+
+<script src="/platform/static/js/site-fx.js"></script>
+<script>
+(function () {
+    'use strict';
+
+    /* ── Auth-aware nav ── */
+    try {
+        var u = window.DARKLOCK_USER;
+        if (u && u.username) {
+            var navUser = document.getElementById('navUser');
+            var navName = document.getElementById('navUsername');
+            var navSignin = document.getElementById('navSignin');
+            var navSignup = document.getElementById('navSignup');
+            var navDash = document.getElementById('navDash');
+            if (navName) navName.textContent = u.displayName || u.username;
+            if (navUser) navUser.style.display = 'inline';
+            if (navSignin) navSignin.style.display = 'none';
+            if (navSignup) navSignup.style.display = 'none';
+            if (navDash) navDash.style.display = 'inline-flex';
+            var heroSignup = document.getElementById('heroSignup');
+            if (heroSignup) { heroSignup.setAttribute('href', '/platform/dashboard'); heroSignup.innerHTML = '<i class="fas fa-gauge-high"></i> Go to Dashboard'; }
+        }
+    } catch (e) {}
+
+    function fmt(n) {
+        if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+        if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
+        return String(n);
+    }
+
+    /* ── Live latency probe ── */
+    function probeLatency() {
+        var t0 = performance.now();
+        fetch('/platform/api/metrics').then(function (r) {
+            if (!r.ok) return;
+            var ms = Math.round(performance.now() - t0);
+            var el = document.getElementById('stripResponse');
+            if (el) el.textContent = ms + 'ms';
+        }).catch(function () {});
+    }
+    probeLatency();
+    setInterval(probeLatency, 30000);
+
+    /* ── Live protected-systems / server count ── */
+    function loadStats() {
+        fetch('/api/stats').then(function (r) { return r.ok ? r.json() : null; }).then(function (d) {
+            if (!d) return;
+            if (typeof d.servers === 'number' && d.servers > 0) {
+                var s = document.getElementById('stripSystems');
+                var m = document.getElementById('mockServers');
+                if (s) s.textContent = fmt(d.servers);
+                if (m) m.textContent = fmt(d.servers);
+            }
+            if (d.uptime) {
+                var up = document.getElementById('stripUptime');
+                if (up) up.textContent = d.uptime;
+            }
+        }).catch(function () {});
+    }
+    loadStats();
+    setInterval(loadStats, 60000);
+
+    /* ── Live security feed terminal ── */
+    var feed = [
+        { t: 500,  h: '<span class="p">darklock</span> <span class="dim">$</span> monitor --all' },
+        { t: 1300, h: '<span class="ok">\u2713</span> Anti-raid shield <span class="ok">ACTIVE</span> <span class="dim">\u2014 all systems</span>' },
+        { t: 2100, h: '<span class="warn">\u26a0</span> Join burst detected <span class="dim">\u2192 18 accounts rate-limited</span>' },
+        { t: 2900, h: '<span class="ok">\u2713</span> Raid neutralized <span class="dim">in 0.31s</span>' },
+        { t: 3700, h: '<span class="info">\u2139</span> Phishing link stripped <span class="dim">\u2014 #general</span>' },
+        { t: 4500, h: '<span class="ok">\u2713</span> File integrity baseline verified <span class="dim">(4,401 entries)</span>' },
+        { t: 5300, h: '<span class="info">\u2139</span> Audit log entry sealed <span class="dim">#88f2\u2026c4</span>' },
+        { t: 6100, h: '<span class="ok">\u2713</span> All systems nominal <span class="dim">\u2014 0 open threats</span>' }
+    ];
+    var term = document.getElementById('lpTerminal');
+    var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    function runFeed() {
+        feed.forEach(function (item) {
+            setTimeout(function () {
+                var ln = document.createElement('span');
+                ln.className = 'ln';
+                ln.style.cssText = 'opacity:0;transform:translateY(6px);transition:all .4s cubic-bezier(.22,1,.36,1)';
+                ln.innerHTML = item.h;
+                term.appendChild(ln);
+                requestAnimationFrame(function () { requestAnimationFrame(function () {
+                    ln.style.opacity = '1'; ln.style.transform = 'translateY(0)';
+                }); });
+            }, item.t);
+        });
+        setTimeout(function () {
+            setInterval(function () {
+                if (!term) return;
+                if (term.children.length > 11) term.removeChild(term.children[1]);
+                var ln = document.createElement('span');
+                ln.className = 'ln';
+                ln.style.cssText = 'opacity:0;transition:opacity .5s ease';
+                var now = new Date().toTimeString().slice(0, 8);
+                ln.innerHTML = '<span class="ok">\u2713</span> Heartbeat <span class="dim">' + now + ' \u2014 all shields holding</span>';
+                term.appendChild(ln);
+                requestAnimationFrame(function () { ln.style.opacity = '1'; });
+            }, 5000);
+        }, 7000);
+    }
+    if (term) {
+        if (reduce) {
+            feed.forEach(function (item) {
+                var ln = document.createElement('span');
+                ln.className = 'ln'; ln.innerHTML = item.h; term.appendChild(ln);
+            });
+        } else if ('IntersectionObserver' in window) {
+            var started = false;
+            var io = new IntersectionObserver(function (entries) {
+                if (entries[0].isIntersecting && !started) { started = true; io.disconnect(); runFeed(); }
+            }, { threshold: 0.3 });
+            io.observe(term);
+        } else {
+            runFeed();
+        }
+    }
+})();
+</script>
+
+</body>
+</html>

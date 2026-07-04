@@ -516,31 +516,6 @@
             <p>Protect your server from mass join attacks and coordinated raid attempts</p>
         </div>
 
-        <!-- Stats Grid -->
-        <div class="stats-grid">
-            <div class="stat-card">
-                <div class="stat-icon primary">
-                    <i class="fas fa-shield-alt"></i>
-                </div>
-                <div class="stat-value" id="raidsPrevented">0</div>
-                <div class="stat-label">Raids Prevented</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-icon success">
-                    <i class="fas fa-user-check"></i>
-                </div>
-                <div class="stat-value" id="legitmateJoins">--</div>
-                <div class="stat-label">Legitimate Joins</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-icon danger">
-                    <i class="fas fa-user-times"></i>
-                </div>
-                <div class="stat-value" id="blockedJoins">0</div>
-                <div class="stat-label">Blocked Joins</div>
-            </div>
-        </div>
-
         <!-- Disabled Banner -->
         <div class="setup-alert warning" id="featureDisabledBanner" style="display: none;">
             <i class="fas fa-exclamation-triangle setup-alert-icon"></i>
@@ -602,13 +577,25 @@
                     </div>
                     <div class="setup-form-group">
                         <label class="setup-form-label">Raid Action</label>
-                        <p class="setup-form-desc">What to do when raid is detected</p>
+                        <p class="setup-form-desc">What to do when a raid is detected</p>
                         <select class="setup-form-select" id="raidAction">
-                            <option value="lockdown">🔒 Lock Server (Recommended)</option>
-                            <option value="kick">👢 Kick New Members</option>
-                            <option value="ban">🔨 Ban New Members</option>
-                            <option value="notify">🔔 Notify Only</option>
+                            <option value="alert_only">Alert only</option>
+                            <option value="verify">Verify</option>
+                            <option value="quarantine">Quarantine (Recommended)</option>
+                            <option value="kick">Kick</option>
+                            <option value="lockdown">Lockdown</option>
                         </select>
+                        <ul class="setup-action-help" style="margin: 12px 0 0; padding-left: 18px; font-size: 13px; line-height: 1.65; color: var(--ds-text-secondary, #9aa4b2);">
+                            <li><strong>Alert only</strong> — Notify moderators. Takes no action against the joining accounts.</li>
+                            <li><strong>Verify</strong> — Route new joiners to verification by assigning your unverified role.</li>
+                            <li><strong>Quarantine</strong> — Temporarily restrict the joining accounts (timeout + marker role) without locking the whole server. Reversible and recommended.</li>
+                            <li><strong>Kick</strong> — Remove the joining accounts from the server.</li>
+                            <li><strong>Lockdown</strong> — Lock every channel for all members until the raid is cleared.</li>
+                        </ul>
+                        <div class="setup-action-warning" id="raidActionWarning" style="display: none; margin-top: 12px; padding: 10px 12px; border-radius: 8px; background: rgba(255,170,0,0.12); border: 1px solid rgba(255,170,0,0.4); color: #ffb020; font-size: 13px;">
+                            <i class="fas fa-exclamation-triangle" style="margin-right: 6px;"></i>
+                            <span id="raidActionWarningText"></span>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -694,9 +681,19 @@
                     const enabled = data.anti_raid_enabled || false;
                     
                     document.getElementById('antiRaidEnabled').checked = enabled;
-                    document.getElementById('joinThreshold').value = data.raid_join_threshold || 10;
-                    document.getElementById('timeWindow').value = data.raid_time_window || 10;
-                    document.getElementById('raidAction').value = data.raid_action || 'lockdown';
+                    document.getElementById('joinThreshold').value = data.raid_join_threshold || data.raid_threshold || 10;
+                    // Time window is stored in seconds by this page, but older
+                    // configs may hold milliseconds (e.g. 60000). Show seconds.
+                    let tw = Number(data.raid_time_window) || 10;
+                    if (tw >= 1000) tw = Math.round(tw / 1000);
+                    document.getElementById('timeWindow').value = tw;
+                    // Normalize the saved action to a supported option.
+                    const raidActions = ['alert_only', 'verify', 'quarantine', 'kick', 'lockdown'];
+                    let ra = (data.raid_action || 'quarantine').toString().toLowerCase();
+                    if (ra === 'notify' || ra === 'alert') ra = 'alert_only';
+                    if (!raidActions.includes(ra)) ra = 'quarantine';
+                    document.getElementById('raidAction').value = ra;
+                    updateRaidActionWarning();
                     document.getElementById('accountAgeEnabled').checked = data.account_age_enabled || false;
                     document.getElementById('minAccountAge').value = data.min_account_age || 7;
                     document.getElementById('lockdownDuration').value = Math.round((data.raid_lockdown_duration_ms || 600000) / 60000);
@@ -713,6 +710,24 @@
             updateFeatureState(this.checked);
         });
 
+        // Show a warning when an aggressive raid action is selected.
+        function updateRaidActionWarning() {
+            const action = document.getElementById('raidAction').value;
+            const box = document.getElementById('raidActionWarning');
+            const text = document.getElementById('raidActionWarningText');
+            const warnings = {
+                kick: 'Kick removes the joining accounts from the server. Legitimate members caught in a false positive will be removed and must rejoin.',
+                lockdown: 'Lockdown restricts every channel for all members until the raid is cleared. Use this only for severe, sustained raids.'
+            };
+            if (warnings[action]) {
+                text.textContent = warnings[action];
+                box.style.display = 'block';
+            } else {
+                box.style.display = 'none';
+            }
+        }
+        document.getElementById('raidAction').addEventListener('change', updateRaidActionWarning);
+
         async function saveSettings() {
             const btn = document.getElementById('saveBtn');
             const msg = document.getElementById('statusMsg');
@@ -727,6 +742,7 @@
                     body: JSON.stringify({
                         anti_raid_enabled: document.getElementById('antiRaidEnabled').checked,
                         raid_join_threshold: parseInt(document.getElementById('joinThreshold').value),
+                        raid_threshold: parseInt(document.getElementById('joinThreshold').value),
                         raid_time_window: parseInt(document.getElementById('timeWindow').value),
                         raid_lockdown_duration_ms: parseInt(document.getElementById('lockdownDuration').value) * 60000,
                         raid_action: document.getElementById('raidAction').value,

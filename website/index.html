@@ -3,543 +3,605 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Darklock — Advanced Discord Security & Protection</title>
-    <meta name="description" content="Protect your Discord server with enterprise-level security. Real-time threat detection, automated moderation, and comprehensive analytics.">
-    <link rel="stylesheet" href="css/style.css?v=20260518a">
-    <link id="dynamic-theme-stylesheet" rel="stylesheet" href="">
-    <script src="js/global-theme.js"></script>
+    <title>Darklock — Discord Security & Multi-Server Moderation Bot</title>
+    <meta name="description" content="Darklock is an all-in-one Discord security bot: anti-nuke, anti-raid, anti-spam, anti-phishing, verification, tickets, appeals, moderation logs and multi-server moderation from one powerful dashboard.">
+    <meta name="theme-color" content="#5865f2">
+
+    <meta property="og:title" content="Darklock — Discord Security & Multi-Server Moderation Bot">
+    <meta property="og:description" content="Protect your community with anti-nuke, anti-raid, anti-phishing, verification, tickets and synchronized multi-server moderation.">
+    <meta property="og:type" content="website">
+
+    <link rel="icon" type="image/png" href="images/darklock-logo.png">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="icon" type="image/png" href="images/darklock-logo.png">
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
+
+    <link rel="stylesheet" href="css/style.css?v=20260702b">
+    <link id="dynamic-theme-stylesheet" rel="stylesheet" href="">
+    <script src="js/global-theme.js"></script>
 </head>
 <body>
 
-<!-- Navigation -->
-<nav class="site-nav" id="siteNav">
-    <div class="site-nav-inner">
-        <a href="/site/" class="site-nav-brand">
-            <img src="images/darklock-logo.png" alt="Darklock" width="28" height="28" style="border-radius:6px;">
-            <span>Darklock</span>
-            <span class="site-nav-tag">Bot</span>
-        </a>
-        <div class="site-nav-links" id="siteNavLinks">
-            <a href="#features">Features</a>
-            <a href="#pricing">Pricing</a>
-            <a href="/site/docs">Docs</a>
-            <a href="/platform/status">Status</a>
-            <a href="/platform">Platform</a>
-            <a href="https://admin.darklock.net/dashboard" class="site-nav-cta" style="background:rgba(255,255,255,0.06)!important;color:var(--text-primary)!important;box-shadow:none!important;border:1px solid var(--border)!important">Dashboard</a>
-            <a href="#" class="site-nav-cta" id="inviteBtn">Add to Discord</a>
-        </div>
-        <button class="site-nav-toggle" id="siteNavToggle" aria-label="Toggle menu">Menu</button>
-    </div>
-</nav>
-
-<!-- Hero -->
-<section class="site-hero">
-    <div class="site-hero-bg">
-        <div class="site-hero-orb site-hero-orb-1"></div>
-        <div class="site-hero-orb site-hero-orb-2"></div>
-        <div class="site-hero-grid"></div>
-    </div>
-    <div class="site-container">
-        <div class="site-hero-inner">
-            <div class="site-hero-content">
-                <div class="site-hero-badge">
-                    <span class="site-live-dot"></span>
-                    <span>Protecting <strong id="serverCount">—</strong> servers</span>
-                </div>
-                <h1 class="site-hero-title">
-                    Next-Gen Discord<br><span class="site-grad">Security Bot</span>
-                </h1>
-                <p class="site-hero-sub">
-                    Protect your Discord community with anti-raid, smart verification, real-time threat detection, and a full moderation toolkit — all in one bot.
-                </p>
-                <div class="site-hero-actions">
-                    <a href="#" class="site-btn site-btn-primary" id="heroInvite">Add to Server</a>
-                    <a href="https://admin.darklock.net/dashboard" class="site-btn site-btn-ghost">Open Dashboard</a>
-                </div>
-                <div class="site-hero-stats">
-                    <div class="site-hero-stat">
-                        <div class="site-hero-stat-val" id="statServers">—</div>
-                        <div class="site-hero-stat-lbl">Servers</div>
-                    </div>
-                    <div class="site-hero-stat">
-                        <div class="site-hero-stat-val" id="statUsers">—</div>
-                        <div class="site-hero-stat-lbl">Users Protected</div>
-                    </div>
-                    <div class="site-hero-stat">
-                        <div class="site-hero-stat-val" id="statUptime">99.9%</div>
-                        <div class="site-hero-stat-lbl">Uptime</div>
-                    </div>
-                    <div class="site-hero-stat">
-                        <div class="site-hero-stat-val">&lt;50ms</div>
-                        <div class="site-hero-stat-lbl">Response</div>
-                    </div>
-                </div>
-            </div>
-            <div class="site-hero-visual">
-                <div class="site-dashboard-mock">
-                    <div class="site-mock-header">
-                        <div class="site-mock-dots">
-                            <span></span><span></span><span></span>
-                        </div>
-                        <span class="site-mock-title">Darklock Dashboard</span>
-                    </div>
-                    <div class="site-mock-body">
-                        <div class="site-mock-row">
-                            <div class="site-mock-card site-mock-card-accent" id="mockStatusCard">
-                                <div>
-                                    <div class="site-mock-val" id="mockStatus">Active</div>
-                                    <div class="site-mock-lbl">Protection Status</div>
-                                </div>
-                            </div>
-                            <div class="site-mock-card">
-                                <div>
-                                    <div class="site-mock-val" id="mockThreats">0</div>
-                                    <div class="site-mock-lbl">Threats Blocked</div>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="site-mock-chart">
-                            <div class="site-mock-chart-label">Threat Activity (7 days)</div>
-                            <div class="site-mock-bars" id="mockChartBars">
-                                <div class="site-mock-bar" style="height:40%"></div>
-                                <div class="site-mock-bar" style="height:65%"></div>
-                                <div class="site-mock-bar" style="height:35%"></div>
-                                <div class="site-mock-bar" style="height:80%"></div>
-                                <div class="site-mock-bar" style="height:55%"></div>
-                                <div class="site-mock-bar" style="height:45%"></div>
-                                <div class="site-mock-bar site-mock-bar-active" style="height:30%"></div>
-                            </div>
-                        </div>
-                        <div class="site-mock-log" id="mockLog">
-                            <div class="site-mock-log-item"><span class="site-mock-log-dot green"></span> Raid attempt blocked <span class="site-mock-log-time">2m ago</span></div>
-                            <div class="site-mock-log-item"><span class="site-mock-log-dot blue"></span> Verification passed <span class="site-mock-log-time">5m ago</span></div>
-                            <div class="site-mock-log-item"><span class="site-mock-log-dot orange"></span> Suspicious link removed <span class="site-mock-log-time">8m ago</span></div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-</section>
-
-<!-- Trusted By -->
-<section class="site-trusted">
-    <div class="site-container">
-        <p class="site-trusted-label">Protecting communities of all sizes</p>
-        <div class="site-trusted-grid">
-            <div class="site-trusted-item"><span>Gaming</span></div>
-            <div class="site-trusted-item"><span>Development</span></div>
-            <div class="site-trusted-item"><span>Education</span></div>
-            <div class="site-trusted-item"><span>Business</span></div>
-            <div class="site-trusted-item"><span>Creative</span></div>
-        </div>
-    </div>
-</section>
-
-<!-- Features -->
-<section id="features" class="site-features">
-    <div class="site-container">
-        <div class="site-sect-head site-reveal">
-            <span class="site-sect-badge">Core Features</span>
-            <h2 class="site-sect-title">Everything Your Server Needs</h2>
-            <p class="site-sect-sub">Defense-grade modules with real-time enforcement, clear auditability, and practical controls your moderators can trust.</p>
-        </div>
-        <div class="site-feat-ribbon site-reveal site-reveal-d1">
-            <div class="site-feat-ribbon-item">
-                <span class="site-feat-ribbon-k">Protected Reach</span>
-                <strong id="featRibbonUsers">--</strong>
-            </div>
-            <div class="site-feat-ribbon-item">
-                <span class="site-feat-ribbon-k">Active Servers</span>
-                <strong id="featRibbonServers">--</strong>
-            </div>
-            <div class="site-feat-ribbon-item">
-                <span class="site-feat-ribbon-k">Reaction Window</span>
-                <strong>&lt; 50ms</strong>
-            </div>
-        </div>
-        <div class="site-feat-grid">
-            <div class="site-feat-card site-reveal site-reveal-d1" style="--accent-color: #ef4444;">
-                <div class="site-feat-card-top">
-                    <span class="site-feat-chip">Threat Control</span>
-                    <span class="site-feat-chip-sub">Layer 01</span>
-                </div>
-                <h3>Anti-Raid Protection</h3>
-                <p>Automatically detects and neutralizes mass-join raids, bot attacks, and coordinated spam floods in real time.</p>
-                <ul class="site-feat-list">
-                    <li>Join velocity anomaly detection</li>
-                    <li>Instant quarantine and escalation rules</li>
-                </ul>
-            </div>
-            <div class="site-feat-card site-reveal site-reveal-d2" style="--accent-color: #f59e0b;">
-                <div class="site-feat-card-top">
-                    <span class="site-feat-chip">Message Defense</span>
-                    <span class="site-feat-chip-sub">Layer 02</span>
-                </div>
-                <h3>Anti-Spam Engine</h3>
-                <p>Advanced pattern recognition identifies and removes spam, repeated messages, invite flooding, and mention abuse.</p>
-                <ul class="site-feat-list">
-                    <li>Adaptive score model per channel</li>
-                    <li>Policy-based mute and cleanup actions</li>
-                </ul>
-            </div>
-            <div class="site-feat-card site-reveal site-reveal-d3" style="--accent-color: #06b6d4;">
-                <div class="site-feat-card-top">
-                    <span class="site-feat-chip">Link Security</span>
-                    <span class="site-feat-chip-sub">Layer 03</span>
-                </div>
-                <h3>Anti-Phishing</h3>
-                <p>Blocks malicious links, phishing attempts, and scam URLs before users can click them. Updated in real time.</p>
-                <ul class="site-feat-list">
-                    <li>Realtime threat-feed matching</li>
-                    <li>Smart redirects and domain denylisting</li>
-                </ul>
-            </div>
-            <div class="site-feat-card site-reveal site-reveal-d1" style="--accent-color: #818cf8;">
-                <div class="site-feat-card-top">
-                    <span class="site-feat-chip">Visibility</span>
-                    <span class="site-feat-chip-sub">Layer 04</span>
-                </div>
-                <h3>Server Analytics</h3>
-                <p>Detailed insights into server activity, member growth, threat patterns, and moderation statistics.</p>
-                <ul class="site-feat-list">
-                    <li>Risk trend dashboards by timeframe</li>
-                    <li>Moderator action quality indicators</li>
-                </ul>
-            </div>
-            <div class="site-feat-card site-reveal site-reveal-d2" style="--accent-color: #a78bfa;">
-                <div class="site-feat-card-top">
-                    <span class="site-feat-chip">Enforcement</span>
-                    <span class="site-feat-chip-sub">Layer 05</span>
-                </div>
-                <h3>Auto-Moderation</h3>
-                <p>Configurable rule engine for automatic warnings, mutes, kicks, and bans. Fair, consistent, and transparent.</p>
-                <ul class="site-feat-list">
-                    <li>Granular per-role moderation policy</li>
-                    <li>Rate-limited response throttles</li>
-                </ul>
-            </div>
-            <div class="site-feat-card site-reveal site-reveal-d3" style="--accent-color: #22c55e;">
-                <div class="site-feat-card-top">
-                    <span class="site-feat-chip">Compliance</span>
-                    <span class="site-feat-chip-sub">Layer 06</span>
-                </div>
-                <h3>Audit Logging</h3>
-                <p>Full audit trail of every moderation action, config change, and security event. Exportable and searchable.</p>
-                <ul class="site-feat-list">
-                    <li>Tamper-aware event history</li>
-                    <li>Fast filter, export, and replay tools</li>
-                </ul>
-            </div>
-        </div>
-    </div>
-</section>
-
-<!-- Pricing -->
-<section id="pricing" class="site-pricing">
-    <div class="site-container">
-        <div class="site-sect-head site-reveal">
-            <span class="site-sect-badge">Pricing</span>
-            <h2 class="site-sect-title">Simple, Transparent Pricing</h2>
-            <p class="site-sect-sub">Start free, upgrade one server with Pro, or cover every server with Enterprise.</p>
-        </div>
-        <div class="site-pricing-grid">
-            <div class="site-price-card site-reveal site-reveal-d1">
-                <div class="site-price-header">
-                    <h3>Free</h3>
-                    <div class="site-price-amount"><span class="site-price-currency">$</span>0<span class="site-price-period">/month</span></div>
-                    <p>Perfect for small communities</p>
-                </div>
-                <ul class="site-price-features">
-                    <li>Anti-raid protection</li>
-                    <li>Basic auto-moderation</li>
-                    <li>Anti-phishing links</li>
-                    <li>Audit logging (7 days)</li>
-                    <li>Community support</li>
-                </ul>
-                <a href="#" class="site-btn site-btn-ghost site-btn-full" id="priceFreeBtn">Add to Server</a>
-            </div>
-            <div class="site-price-card site-price-card-featured site-reveal site-reveal-d2">
-                <div class="site-price-popular">Most Popular</div>
-                <div class="site-price-header">
-                    <h3>Pro</h3>
-                    <div class="site-price-amount"><span class="site-price-currency">$</span>5<span class="site-price-period">/month</span></div>
-                    <p>For serious server admins</p>
-                </div>
-                <ul class="site-price-features">
-                    <li>Everything in Free</li>
-                    <li>Advanced threat intelligence</li>
-                    <li>Custom rule engine</li>
-                    <li>Analytics dashboard</li>
-                    <li>Unlimited audit logging</li>
-                    <li>Priority support</li>
-                    <li>Webhook integrations</li>
-                </ul>
-                <a href="/payment" class="site-btn site-btn-primary site-btn-full" id="priceProBtn">Upgrade to Pro</a>
-            </div>
-            <div class="site-price-card site-reveal site-reveal-d3">
-                <div class="site-price-popular">Best Value</div>
-                <div class="site-price-header">
-                    <h3>Enterprise</h3>
-                    <div class="site-price-amount"><span class="site-price-currency">$</span>50<span class="site-price-period">/month</span></div>
-                    <p>Full access across all your servers</p>
-                </div>
-                <ul class="site-price-features">
-                    <li>Everything in Pro</li>
-                    <li>Advanced analytics dashboard</li>
-                    <li>Voice monitoring &amp; channel access control</li>
-                    <li>Trust score system</li>
-                    <li>Scheduled announcements</li>
-                    <li>XP &amp; leaderboard system</li>
-                    <li>Early access to beta features &amp; apps</li>
-                    <li>Priority support</li>
-                </ul>
-                <a href="/payment" class="site-btn site-btn-primary site-btn-full" id="priceEnterpriseBtn">Get Enterprise - $50/mo</a>
-            </div>
-        </div>
-    </div>
-</section>
-
-<!-- CTA -->
-<section class="site-cta">
-    <div class="site-container">
-        <div class="site-cta-inner site-reveal">
-            <h2>Ready to Protect Your Server?</h2>
-            <p>Add Darklock to your Discord server and start protecting your community in minutes.</p>
-            <div class="site-cta-btns">
-                <a href="#" class="site-btn site-btn-primary site-btn-lg" id="ctaInvite">Add Darklock to Discord</a>
-                <a href="https://discord.gg/Vsq9PUTrgb" target="_blank" class="site-btn site-btn-ghost site-btn-lg">Join Support Server</a>
-                <a href="/platform" class="site-btn site-btn-ghost site-btn-lg">View Platform</a>
-            </div>
-        </div>
-    </div>
-</section>
-
-<!-- Footer -->
-<footer class="site-footer">
-    <div class="site-container">
-        <div class="site-footer-grid">
-            <div class="site-footer-brand">
-                <div class="site-footer-logo">
-                    <img src="images/darklock-logo.png" alt="Darklock">
-                    <span>Darklock</span>
-                </div>
-                <p class="site-footer-tagline">Discord security for communities that take protection seriously.</p>
-            </div>
-            <div class="site-footer-col">
-                <h4>Product</h4>
+    <!-- ===================== NAV ===================== -->
+    <header class="site-nav" id="siteNav">
+        <div class="site-nav-inner">
+            <a href="#top" class="site-nav-brand">
+                <img src="images/darklock-logo.png" alt="Darklock" width="30" height="30">
+                Darklock
+                <span class="site-nav-tag">Security</span>
+            </a>
+            <nav class="site-nav-links" id="siteNavLinks">
                 <a href="#features">Features</a>
-                <a href="#security">Security</a>
+                <a href="#showcase">In Action</a>
+                <a href="#multiserver">Multi-Server</a>
                 <a href="#pricing">Pricing</a>
-                <a href="#" id="footerInvite">Add Bot</a>
+                <a href="/site/docs" class="site-nav-quiet">Docs</a>
+                <a href="https://admin.darklock.net/dashboard" class="site-nav-quiet">Dashboard</a>
+                <a href="#" class="site-nav-cta js-invite">Add Darklock</a>
+            </nav>
+            <button class="site-nav-toggle" id="siteNavToggle" aria-label="Toggle navigation" aria-expanded="false">Menu</button>
+        </div>
+    </header>
+
+    <main id="top">
+
+        <!-- ===================== HERO ===================== -->
+        <section class="site-hero">
+            <div class="site-container site-hero-shell">
+                <div class="site-hero-copy site-reveal">
+                    <span class="site-eyebrow">Discord Security &amp; Moderation</span>
+                    <h1>Lock down your server with <span class="grad">Darklock</span>.</h1>
+                    <p>One bot for anti-nuke, anti-raid, anti-phishing, verification, tickets and appeals — plus <strong>synchronized multi-server moderation</strong> that keeps every community you run protected at once.</p>
+                    <div class="site-hero-actions">
+                        <a href="#" class="site-btn site-btn-primary site-btn-lg js-invite">Add Darklock</a>
+                        <a href="https://admin.darklock.net/dashboard" class="site-btn site-btn-ghost site-btn-lg">Open Dashboard</a>
+                        <a href="https://discord.gg/Vsq9PUTrgb" class="site-btn site-btn-ghost site-btn-lg" target="_blank" rel="noopener">Join Support Server</a>
+                    </div>
+                    <div class="site-hero-pills">
+                        <span class="site-pill">Real-time protection</span>
+                        <span class="site-pill">No code required</span>
+                        <span class="site-pill">Cross-server sync</span>
+                    </div>
+                </div>
+
+                <div class="site-hero-visual site-reveal site-reveal-d2">
+                    <div class="site-hero-panel">
+                        <div class="site-panel-head">
+                            <strong>Security Overview</strong>
+                            <span class="site-status-active">Protection Active</span>
+                        </div>
+                        <div class="site-panel-grid">
+                            <div class="site-panel-item"><span>Threats blocked (24h)</span><strong>1,284</strong></div>
+                            <div class="site-panel-item"><span>Raids stopped</span><strong>7</strong></div>
+                            <div class="site-panel-item"><span>Phishing removed</span><strong>96</strong></div>
+                            <div class="site-panel-item"><span>Members verified</span><strong>3,410</strong></div>
+                            <div class="site-panel-item site-panel-item-wide"><span>Servers synced</span><strong>12 communities protected together</strong></div>
+                        </div>
+                        <div class="site-panel-events">
+                            <h3>Live events</h3>
+                            <ul>
+                                <li><em class="is-danger"></em> Anti-raid halted 40 rapid joins in #general</li>
+                                <li><em class="is-danger"></em> Phishing link auto-deleted &amp; user timed out</li>
+                                <li><em></em> New member verified via captcha gate</li>
+                                <li><em></em> Synced ban propagated to 11 partner servers</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
             </div>
-            <div class="site-footer-col">
-                <h4>Resources</h4>
-                <a href="/platform">Platform</a>
-                <a href="https://admin.darklock.net/dashboard">Bot Dashboard</a>
-                <a href="/platform/docs">Documentation</a>
-                <a href="/platform/status">Status</a>
-                <a href="/site/bug-reports" style="color:#f97316">Bug Reports</a>
+        </section>
+
+        <!-- ===================== TRUST STRIP ===================== -->
+        <section class="site-trust">
+            <div class="site-container">
+                <span class="site-trust-label site-reveal">Built for every kind of community</span>
+                <div class="site-trust-badges site-reveal site-reveal-d1">
+                    <span>Gaming</span>
+                    <span>Creators</span>
+                    <span>Education</span>
+                    <span>Business</span>
+                    <span>Development</span>
+                    <span>Support Networks</span>
+                </div>
             </div>
-            <div class="site-footer-col">
-                <h4>Community</h4>
-                <a href="https://discord.gg/Vsq9PUTrgb" target="_blank">Support Server</a>
-                <a href="https://github.com/anonymous-hidden?tab=repositories" target="_blank">GitHub</a>
+        </section>
+
+        <!-- ===================== FEATURE PREVIEW CARDS ===================== -->
+        <section class="site-showcase" id="showcase">
+            <div class="site-container">
+                <div class="site-sect-head site-reveal">
+                    <span class="site-sect-badge">Core protection</span>
+                    <h2 class="site-sect-title">Everything a secure server needs</h2>
+                    <p class="site-sect-sub">Layered defenses that work the moment Darklock joins — no complicated setup, no gaps in coverage.</p>
+                </div>
+                <div class="site-preview-grid">
+                    <article class="site-preview-card is-flagship site-reveal js-tilt">
+                        <div class="site-flagship-copy">
+                            <div class="site-card-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c2.6 2.7 2.6 15.3 0 18M12 3c-2.6 2.7-2.6 15.3 0 18"/></svg></div>
+                            <h3>Multi-Server Moderation</h3>
+                            <p>Run several communities? Darklock links them into one shared security network. Bans, mutes and threat intel sync across every connected server, with review controls so nothing propagates by accident.</p>
+                            <span class="site-card-tag">Key feature</span>
+                        </div>
+                        <div class="dc-window">
+                            <div class="dc-titlebar">
+                                <div class="dc-dots"><i></i><i></i><i></i></div>
+                                <span class="dc-channel"><span class="hash">#</span>network-security</span>
+                            </div>
+                            <div class="dc-body">
+                                <div class="dc-msg">
+                                    <div class="dc-avatar is-bot">D</div>
+                                    <div>
+                                        <div class="dc-msg-head"><span class="dc-user role-blurple">Darklock</span><span class="dc-badge-bot">Bot</span><span class="dc-time">Today at 4:12 PM</span></div>
+                                        <div class="dc-embed is-yellow">
+                                            <div class="dc-embed-title">🔗 Synced Ban — Pending Review</div>
+                                            <div class="dc-embed-fields">
+                                                <div class="dc-field"><label>User</label><b>raidbot#4821</b></div>
+                                                <div class="dc-field"><label>Origin server</label><b>Nova Gaming</b></div>
+                                                <div class="dc-field"><label>Reason</label><b>Coordinated raid</b></div>
+                                                <div class="dc-field"><label>Propagates to</label><b>11 servers</b></div>
+                                            </div>
+                                            <div class="dc-embed-foot">Network moderation • awaiting approval</div>
+                                        </div>
+                                        <div class="dc-actions">
+                                            <button class="dc-btn dc-btn-green">Approve for network</button>
+                                            <button class="dc-btn dc-btn-gray">This server only</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </article>
+
+                    <article class="site-preview-card site-reveal site-reveal-d1 js-tilt">
+                        <div class="site-card-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5.5c0 4.3-3 7.4-7 8.5-4-1.1-7-4.2-7-8.5V6l7-3z"/></svg></div>
+                        <h3>Anti-Nuke</h3>
+                        <p>Detects mass channel/role deletions and rogue admins, then instantly revokes permissions to stop damage in its tracks.</p>
+                    </article>
+                    <article class="site-preview-card site-reveal site-reveal-d2 js-tilt">
+                        <div class="site-card-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/></svg></div>
+                        <h3>Anti-Raid</h3>
+                        <p>Throttles suspicious join waves, challenges new accounts and quarantines raiders before they reach your channels.</p>
+                    </article>
+                    <article class="site-preview-card site-reveal site-reveal-d3 js-tilt">
+                        <div class="site-card-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2 2 2 0 0 0 0 4 2 2 0 0 1-2 2H6a2 2 0 0 1-2-2 2 2 0 0 0 0-4z"/><path d="M14 7v10"/></svg></div>
+                        <h3>Ticket System</h3>
+                        <p>Give members a clean support flow with private ticket channels, staff routing and full transcript logging.</p>
+                    </article>
+                </div>
+            </div>
+        </section>
+
+        <!-- ===================== DISCORD MOCKUPS ===================== -->
+        <section class="site-mockups" id="features">
+            <div class="site-container">
+                <div class="site-sect-head site-reveal">
+                    <span class="site-sect-badge">See it in action</span>
+                    <h2 class="site-sect-title">What Darklock looks like in your server</h2>
+                    <p class="site-sect-sub">Realistic previews of moderation logs, tickets, phishing alerts and verification — exactly how they appear to your members and staff.</p>
+                </div>
+
+                <div class="site-mockup-grid">
+                    <!-- Mod log: ban for raid -->
+                    <div class="site-mockup-cell site-reveal">
+                        <div class="site-mockup-cap">
+                            <h3>Moderation logs</h3>
+                            <p>Every action is recorded with full context for accountable, auditable moderation.</p>
+                        </div>
+                        <div class="dc-window">
+                            <div class="dc-titlebar">
+                                <div class="dc-dots"><i></i><i></i><i></i></div>
+                                <span class="dc-channel"><span class="hash">#</span>mod-logs</span>
+                            </div>
+                            <div class="dc-body">
+                                <div class="dc-msg">
+                                    <div class="dc-avatar is-bot">D</div>
+                                    <div>
+                                        <div class="dc-msg-head"><span class="dc-user role-blurple">Darklock</span><span class="dc-badge-bot">Bot</span><span class="dc-time">Today at 2:47 PM</span></div>
+                                        <div class="dc-embed is-red">
+                                            <div class="dc-embed-title">🔨 Member Banned</div>
+                                            <div class="dc-embed-fields">
+                                                <div class="dc-field"><label>User</label><b>shadowraid#0092</b></div>
+                                                <div class="dc-field"><label>Moderator</label><b>Auto-Mod</b></div>
+                                                <div class="dc-field"><label>Reason</label><b>Raid behavior detected</b></div>
+                                                <div class="dc-field"><label>Case</label><b>#1487</b></div>
+                                            </div>
+                                            <div class="dc-embed-foot">Triggered by anti-raid • 41 rapid joins in 8s</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Ticket panel -->
+                    <div class="site-mockup-cell site-reveal site-reveal-d1">
+                        <div class="site-mockup-cap">
+                            <h3>Ticket &amp; support panel</h3>
+                            <p>Members open a private ticket; staff respond with full history and one-click controls.</p>
+                        </div>
+                        <div class="dc-window">
+                            <div class="dc-titlebar">
+                                <div class="dc-dots"><i></i><i></i><i></i></div>
+                                <span class="dc-channel"><span class="hash">#</span>support</span>
+                            </div>
+                            <div class="dc-body">
+                                <div class="dc-msg">
+                                    <div class="dc-avatar is-bot">D</div>
+                                    <div>
+                                        <div class="dc-msg-head"><span class="dc-user role-blurple">Darklock</span><span class="dc-badge-bot">Bot</span><span class="dc-time">Today at 1:03 PM</span></div>
+                                        <div class="dc-embed">
+                                            <div class="dc-embed-title">🎫 Need help?</div>
+                                            <div class="dc-msg-text">Open a private ticket and our staff team will assist you.</div>
+                                        </div>
+                                        <div class="dc-actions"><button class="dc-btn dc-btn-blurple">Open Ticket</button></div>
+                                    </div>
+                                </div>
+                                <div class="dc-msg">
+                                    <div class="dc-avatar is-green">S</div>
+                                    <div>
+                                        <div class="dc-msg-head"><span class="dc-user role-green">Staff • Mia</span><span class="dc-time">Today at 1:04 PM</span></div>
+                                        <div class="dc-msg-text">Hey! Thanks for reaching out — I can see your ticket <span class="dc-mention">#ticket-2043</span>. What can we help you with today?</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Anti-phishing -->
+                    <div class="site-mockup-cell site-reveal">
+                        <div class="site-mockup-cap">
+                            <h3>Anti-phishing</h3>
+                            <p>Malicious links are removed instantly and the sender is contained before anyone clicks.</p>
+                        </div>
+                        <div class="dc-window">
+                            <div class="dc-titlebar">
+                                <div class="dc-dots"><i></i><i></i><i></i></div>
+                                <span class="dc-channel"><span class="hash">#</span>general</span>
+                            </div>
+                            <div class="dc-body">
+                                <div class="dc-msg">
+                                    <div class="dc-avatar is-red">?</div>
+                                    <div>
+                                        <div class="dc-msg-head"><span class="dc-user role-red">sketchy-user</span><span class="dc-time">Today at 5:20 PM</span></div>
+                                        <div class="dc-msg-text"><s>free-nitro-gift·steamcommunlty.ru/claim</s> <span class="dc-pill bad">Removed</span></div>
+                                    </div>
+                                </div>
+                                <div class="dc-msg">
+                                    <div class="dc-avatar is-bot">D</div>
+                                    <div>
+                                        <div class="dc-msg-head"><span class="dc-user role-blurple">Darklock</span><span class="dc-badge-bot">Bot</span><span class="dc-time">Today at 5:20 PM</span></div>
+                                        <div class="dc-embed is-red">
+                                            <div class="dc-embed-title">🚨 Phishing Link Blocked</div>
+                                            <div class="dc-msg-text">A known scam domain was detected and deleted. User has been timed out pending review.</div>
+                                            <div class="dc-embed-foot">Threat database match • auto-action</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Verification -->
+                    <div class="site-mockup-cell site-reveal site-reveal-d1">
+                        <div class="site-mockup-cap">
+                            <h3>Verification system</h3>
+                            <p>Gate new members behind a captcha or button check to keep bots and raiders out.</p>
+                        </div>
+                        <div class="dc-window">
+                            <div class="dc-titlebar">
+                                <div class="dc-dots"><i></i><i></i><i></i></div>
+                                <span class="dc-channel"><span class="hash">#</span>verify</span>
+                            </div>
+                            <div class="dc-body">
+                                <div class="dc-msg">
+                                    <div class="dc-avatar is-bot">D</div>
+                                    <div>
+                                        <div class="dc-msg-head"><span class="dc-user role-blurple">Darklock</span><span class="dc-badge-bot">Bot</span><span class="dc-time">Today at 6:01 PM</span></div>
+                                        <div class="dc-embed is-green">
+                                            <div class="dc-embed-title">✅ Verification Complete</div>
+                                            <div class="dc-msg-text"><span class="dc-mention">@newmember</span> passed the check and now has access to the server.</div>
+                                            <div class="dc-embed-fields">
+                                                <div class="dc-field"><label>Method</label><b>Captcha gate</b></div>
+                                                <div class="dc-field"><label>Role granted</label><b>@Verified</b></div>
+                                            </div>
+                                        </div>
+                                        <div class="dc-actions"><span class="dc-pill ok">Access granted</span></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ===================== FULL FEATURE GRID ===================== -->
+        <section class="site-features">
+            <div class="site-container">
+                <div class="site-sect-head site-reveal">
+                    <span class="site-sect-badge">Complete toolkit</span>
+                    <h2 class="site-sect-title">Every layer of protection, in one bot</h2>
+                    <p class="site-sect-sub">Enable exactly what your community needs — or turn it all on and let Darklock handle the rest.</p>
+                </div>
+                <div class="site-feature-grid">
+                    <article class="site-feat is-key site-reveal">
+                        <div class="site-card-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c2.6 2.7 2.6 15.3 0 18M12 3c-2.6 2.7-2.6 15.3 0 18"/></svg></div>
+                        <h3>Multi-Server Moderation <span class="site-key-tag">Key</span></h3>
+                        <p>Sync bans, mutes and threat intel across all your servers from one shared security network.</p>
+                    </article>
+                    <article class="site-feat site-reveal site-reveal-d1"><div class="site-card-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5.5c0 4.3-3 7.4-7 8.5-4-1.1-7-4.2-7-8.5V6l7-3z"/></svg></div><h3>Anti-Nuke</h3><p>Stops mass deletions and rogue admins by instantly stripping dangerous permissions.</p></article>
+                    <article class="site-feat site-reveal site-reveal-d2"><div class="site-card-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/></svg></div><h3>Anti-Raid</h3><p>Detects and quarantines coordinated join waves before they reach your channels.</p></article>
+                    <article class="site-feat site-reveal"><div class="site-card-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M20 4H4a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3v4l4-4h9a1 1 0 0 0 1-1V5a1 1 0 0 0-1-1z"/></svg></div><h3>Anti-Spam</h3><p>Rate-limits floods, repeated messages and mention storms automatically.</p></article>
+                    <article class="site-feat site-reveal site-reveal-d1"><div class="site-card-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5.5c0 4.3-3 7.4-7 8.5-4-1.1-7-4.2-7-8.5V6l7-3z"/><path d="M12 8.5v4M12 15.5h.01"/></svg></div><h3>Anti-Phishing</h3><p>Removes known scam and malware links and contains the sender instantly.</p></article>
+                    <article class="site-feat site-reveal site-reveal-d2"><div class="site-card-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2 2 2 0 0 0 0 4 2 2 0 0 1-2 2H6a2 2 0 0 1-2-2 2 2 0 0 0 0-4z"/><path d="M14 7v10"/></svg></div><h3>Ticket System</h3><p>Private support channels with staff routing and full transcript logging.</p></article>
+                    <article class="site-feat site-reveal"><div class="site-card-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v15M8 20h8M5 7h14M5 7l-2 5a3 3 0 0 0 4 0zM19 7l-2 5a3 3 0 0 0 4 0z"/></svg></div><h3>Appeal System</h3><p>Let banned members submit appeals through a clean, reviewable workflow.</p></article>
+                    <article class="site-feat site-reveal site-reveal-d1"><div class="site-card-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01"/></svg></div><h3>Moderation Logs</h3><p>Complete, searchable audit trail of every automated and manual action.</p></article>
+                    <article class="site-feat site-reveal site-reveal-d2"><div class="site-card-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8.5 12.5l2.2 2.2 4.6-4.9"/></svg></div><h3>Verification</h3><p>Captcha and button gates that keep bots and raiders out of your server.</p></article>
+                    <article class="site-feat site-reveal"><div class="site-card-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg></div><h3>Dashboard Permissions</h3><p>Fine-grained, role-based access so staff only touch what they should.</p></article>
+                    <article class="site-feat site-reveal site-reveal-d1"><div class="site-card-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21V5a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v16M14 21V10h5a1 1 0 0 1 1 1v10M2 21h20M7.5 8h3M7.5 12h3M7.5 16h3"/></svg></div><h3>Enterprise Tools</h3><p>Advanced controls, network security and priority support for large communities.</p></article>
+                    <article class="site-feat site-reveal site-reveal-d2"><div class="site-card-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4v16h16M8 16v-5M12 16V8M16 16v-8"/></svg></div><h3>Server Analytics</h3><p>Track threats, growth and moderation activity with clear reporting.</p></article>
+                </div>
+            </div>
+        </section>
+
+        <!-- ===================== MULTI-SERVER SPOTLIGHT + DASHBOARD PREVIEW ===================== -->
+        <section class="site-dashboard" id="multiserver">
+            <div class="site-container site-dashboard-shell">
+                <div class="site-dashboard-copy site-reveal">
+                    <span class="site-sect-badge">Manage everything in one place</span>
+                    <h2>One dashboard for all your servers</h2>
+                    <p>Toggle protection modules, review incidents and approve network-wide actions from a single, fast web dashboard. Multi-server moderation keeps every community you run in sync.</p>
+                    <ul class="site-check-list">
+                        <li>Enable or disable any protection layer per server</li>
+                        <li>Approve synced bans across your entire network</li>
+                        <li>Role-based permissions for your whole staff team</li>
+                        <li>Live incident feed and full moderation history</li>
+                    </ul>
+                    <div class="site-hero-actions">
+                        <a href="https://admin.darklock.net/dashboard" class="site-btn site-btn-primary">Open Dashboard</a>
+                        <a href="#" class="site-btn site-btn-ghost js-invite">Add Darklock</a>
+                    </div>
+                </div>
+
+                <div class="site-admin-card site-reveal site-reveal-d2">
+                    <div class="site-admin-head">
+                        <strong>Security Modules</strong>
+                        <span class="site-status-active">All systems normal</span>
+                    </div>
+                    <div class="site-admin-modules">
+                        <div class="site-module"><span><span class="m-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c2.6 2.7 2.6 15.3 0 18M12 3c-2.6 2.7-2.6 15.3 0 18"/></svg></span> Multi-Server Sync</span><span class="site-toggle on"></span></div>
+                        <div class="site-module"><span><span class="m-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5.5c0 4.3-3 7.4-7 8.5-4-1.1-7-4.2-7-8.5V6l7-3z"/></svg></span> Anti-Nuke</span><span class="site-toggle on"></span></div>
+                        <div class="site-module"><span><span class="m-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/></svg></span> Anti-Raid</span><span class="site-toggle on"></span></div>
+                        <div class="site-module"><span><span class="m-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5.5c0 4.3-3 7.4-7 8.5-4-1.1-7-4.2-7-8.5V6l7-3z"/><path d="M12 8.5v4M12 15.5h.01"/></svg></span> Anti-Phishing</span><span class="site-toggle on"></span></div>
+                        <div class="site-module"><span><span class="m-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8.5 12.5l2.2 2.2 4.6-4.9"/></svg></span> Verification Gate</span><span class="site-toggle on"></span></div>
+                        <div class="site-module"><span><span class="m-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2 2 2 0 0 0 0 4 2 2 0 0 1-2 2H6a2 2 0 0 1-2-2 2 2 0 0 0 0-4z"/><path d="M14 7v10"/></svg></span> Ticket System</span><span class="site-toggle"></span></div>
+                    </div>
+                    <div class="site-admin-foot">
+                        <div class="site-stat"><span>Servers</span><strong class="b">12</strong></div>
+                        <div class="site-stat"><span>Blocked today</span><strong>1,284</strong></div>
+                        <div class="site-stat"><span>Uptime</span><strong class="g">99.9%</strong></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ===================== ENTERPRISE ===================== -->
+        <section class="site-enterprise">
+            <div class="site-container">
+                <div class="site-enterprise-card site-reveal">
+                    <div class="site-enterprise-head">
+                        <span class="site-sect-badge">For networks &amp; large communities</span>
+                        <h2>Enterprise-grade security tools</h2>
+                        <p>Scale Darklock across dozens of servers with shared threat intelligence, granular access control and priority support built for serious communities.</p>
+                    </div>
+                    <div class="site-enterprise-grid">
+                        <div class="site-ent-item"><div class="site-card-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c2.6 2.7 2.6 15.3 0 18M12 3c-2.6 2.7-2.6 15.3 0 18"/></svg></div><h3>Network Moderation</h3><p>Synchronize bans and policies across every connected server instantly.</p></div>
+                        <div class="site-ent-item"><div class="site-card-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="7" width="10" height="10" rx="1.5"/><path d="M10 4v3M14 4v3M10 17v3M14 17v3M4 10h3M4 14h3M17 10h3M17 14h3"/></svg></div><h3>Shared Threat Intel</h3><p>One server's detection protects the whole network in real time.</p></div>
+                        <div class="site-ent-item"><div class="site-card-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg></div><h3>Role-Based Access</h3><p>Fine-grained permissions for staff, admins and network owners.</p></div>
+                        <div class="site-ent-item"><div class="site-card-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M13 3L5 13.5h5.2L10 21l8-10.5h-5.2L13 3z"/></svg></div><h3>Priority Support</h3><p>Faster response and dedicated help for enterprise communities.</p></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ===================== TRUST / SECURITY ===================== -->
+        <section class="site-security">
+            <div class="site-container">
+                <div class="site-sect-head site-reveal">
+                    <span class="site-sect-badge">Secure by design</span>
+                    <h2 class="site-sect-title">Built with safety at the core</h2>
+                    <p class="site-sect-sub">Darklock is engineered to protect your server without overstepping — sensible defaults, clear logs and respect for your data.</p>
+                </div>
+                <div class="site-security-grid">
+                    <div class="site-sec-item site-reveal"><div class="site-card-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg></div><h3>Safe Defaults</h3><p>Protection turns on with conservative, community-friendly settings out of the box.</p></div>
+                    <div class="site-sec-item site-reveal site-reveal-d1"><div class="site-card-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M13 3H7a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V8z"/><path d="M13 3v5h5M9 13h6M9 17h6"/></svg></div><h3>Full Audit Logs</h3><p>Every automated action is transparent, timestamped and reviewable.</p></div>
+                    <div class="site-sec-item site-reveal site-reveal-d2"><div class="site-card-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h9M17 8h3M4 16h3M11 16h9"/><circle cx="15" cy="8" r="2.2"/><circle cx="9" cy="16" r="2.2"/></svg></div><h3>Permission Checks</h3><p>Darklock only ever acts within the roles and scopes you grant it.</p></div>
+                    <div class="site-sec-item site-reveal site-reveal-d3"><div class="site-card-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5.5c0 4.3-3 7.4-7 8.5-4-1.1-7-4.2-7-8.5V6l7-3z"/><path d="M9.5 12l1.8 1.8 3.4-3.6"/></svg></div><h3>Privacy Respecting</h3><p>We store only what's needed to keep your server secure — nothing more.</p></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ===================== PRICING ===================== -->
+        <section class="site-pricing" id="pricing">
+            <div class="site-container">
+                <div class="site-sect-head site-reveal">
+                    <span class="site-sect-badge">Pricing</span>
+                    <h2 class="site-sect-title">Start free, scale when you're ready</h2>
+                    <p class="site-sect-sub">Core protection is free forever. Upgrade for advanced tools and full multi-server moderation.</p>
+                </div>
+                <div class="site-pricing-grid">
+                    <div class="site-price-card site-reveal">
+                        <h3>Free</h3>
+                        <div class="site-price-amount">$0</div>
+                        <p class="site-price-text">Essential protection for a single community.</p>
+                        <ul>
+                            <li>Anti-raid &amp; anti-spam</li>
+                            <li>Anti-phishing filtering</li>
+                            <li>Verification gate</li>
+                            <li>Basic moderation logs</li>
+                        </ul>
+                        <a href="#" class="site-btn site-btn-ghost site-btn-full js-invite">Add Darklock</a>
+                    </div>
+
+                    <div class="site-price-card site-price-card-featured site-reveal site-reveal-d1">
+                        <span class="site-price-badge">Most popular</span>
+                        <h3>Pro</h3>
+                        <div class="site-price-amount">$5 <small>/mo</small></div>
+                        <p class="site-price-text">Advanced protection and tools for growing servers.</p>
+                        <ul>
+                            <li>Everything in Free</li>
+                            <li>Anti-nuke protection</li>
+                            <li>Ticket &amp; appeal systems</li>
+                            <li>Full audit logging &amp; analytics</li>
+                            <li>Priority processing</li>
+                        </ul>
+                        <a href="/payment" class="site-btn site-btn-primary site-btn-full">Upgrade to Pro</a>
+                    </div>
+
+                    <div class="site-price-card site-reveal site-reveal-d2">
+                        <h3>Enterprise</h3>
+                        <div class="site-price-amount">$50 <small>/mo</small></div>
+                        <p class="site-price-text">Full multi-server moderation for networks.</p>
+                        <ul>
+                            <li>Everything in Pro</li>
+                            <li>Multi-server moderation &amp; sync</li>
+                            <li>Shared threat intelligence</li>
+                            <li>Role-based dashboard access</li>
+                            <li>Priority support</li>
+                        </ul>
+                        <a href="/payment" class="site-btn site-btn-ghost site-btn-full">Get Enterprise</a>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ===================== FINAL CTA ===================== -->
+        <section class="site-cta">
+            <div class="site-container">
+                <div class="site-cta-card site-reveal">
+                    <h2>Ready to lock down your server?</h2>
+                    <p>Add Darklock in seconds and get real-time protection across every community you run.</p>
+                    <div class="site-cta-actions">
+                        <a href="#" class="site-btn site-btn-primary site-btn-lg js-invite">Add Darklock</a>
+                        <a href="https://admin.darklock.net/dashboard" class="site-btn site-btn-ghost site-btn-lg">Open Dashboard</a>
+                        <a href="https://discord.gg/Vsq9PUTrgb" class="site-btn site-btn-ghost site-btn-lg" target="_blank" rel="noopener">Join Support Server</a>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- ===================== FOOTER ===================== -->
+    <footer class="site-footer">
+        <div class="site-container">
+            <div class="site-footer-grid">
+                <div>
+                    <a href="#top" class="site-footer-logo">
+                        <img src="images/darklock-logo.png" alt="Darklock" width="28" height="28">
+                        Darklock
+                    </a>
+                    <p class="site-footer-tagline">All-in-one Discord security and multi-server moderation. Protect your community with anti-nuke, anti-raid, anti-phishing and more.</p>
+                </div>
+                <div class="site-footer-col">
+                    <h4>Product</h4>
+                    <a href="#features">Features</a>
+                    <a href="#multiserver">Multi-Server</a>
+                    <a href="#pricing">Pricing</a>
+                    <a href="https://admin.darklock.net/dashboard">Dashboard</a>
+                </div>
+                <div class="site-footer-col">
+                    <h4>Resources</h4>
+                    <a href="/site/docs">Documentation</a>
+                    <a href="/platform/status">Status</a>
+                    <a href="https://github.com/anonymous-hidden?tab=repositories" target="_blank" rel="noopener">GitHub</a>
+                </div>
+                <div class="site-footer-col">
+                    <h4>Community</h4>
+                    <a href="https://discord.gg/Vsq9PUTrgb" target="_blank" rel="noopener">Support Server</a>
+                    <a href="#" class="js-invite">Add to Discord</a>
+                </div>
+                <div class="site-footer-col">
+                    <h4>Legal</h4>
+                    <a href="/site/privacy">Privacy</a>
+                    <a href="/site/terms">Terms</a>
+                    <a href="/site/security">Security</a>
+                </div>
+            </div>
+            <div class="site-footer-bottom">
+                &copy; <span id="siteYear">2026</span> Darklock. All rights reserved.
             </div>
         </div>
-        <div class="site-footer-bottom">
-            <p>&copy; 2026 Darklock. All rights reserved.</p>
-            <div class="site-footer-social">
-                <a href="https://discord.gg/Vsq9PUTrgb" aria-label="Discord" target="_blank">Discord</a>
-                <a href="https://github.com/anonymous-hidden?tab=repositories" target="_blank" aria-label="GitHub">GitHub</a>
-            </div>
-        </div>
-    </div>
-</footer>
+    </footer>
 
-<script src="js/main.js?v=4"></script>
-<script src="js/global-theme.js"></script>
-<script>
-(function() {
-    'use strict';
+    <script>
+        (function () {
+            'use strict';
 
-    // Nav scroll
-    var nav = document.getElementById('siteNav');
-    window.addEventListener('scroll', function() {
-        if (nav) nav.classList.toggle('scrolled', window.scrollY > 40);
-    });
+            var INVITE_URL = 'https://discord.com/api/oauth2/authorize?client_id=1439793800309379114&permissions=8&scope=bot%20applications.commands';
 
-    // Smooth reveal with robust fallback so sections (including pricing)
-    // are visible even if IntersectionObserver is unavailable.
-    var reduceMotion = false;
-    try {
-        reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    } catch (_) {}
-
-    var revealEls = document.querySelectorAll('.site-reveal');
-    if (reduceMotion || !('IntersectionObserver' in window)) {
-        revealEls.forEach(function(el) { el.classList.add('visible'); });
-    } else {
-        try {
-            var observer = new IntersectionObserver(function(entries) {
-                entries.forEach(function(e) {
-                    if (e.isIntersecting) {
-                        e.target.classList.add('visible');
-                        observer.unobserve(e.target);
-                    }
+            // Invite buttons
+            document.querySelectorAll('.js-invite').forEach(function (el) {
+                el.addEventListener('click', function (e) {
+                    e.preventDefault();
+                    window.open(INVITE_URL, '_blank', 'noopener');
                 });
-            }, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
+            });
 
-            revealEls.forEach(function(el) { observer.observe(el); });
-        } catch (_) {
-            revealEls.forEach(function(el) { el.classList.add('visible'); });
-        }
-    }
+            // Nav scrolled state
+            var nav = document.getElementById('siteNav');
+            var onScroll = function () {
+                if (!nav) return;
+                nav.classList.toggle('scrolled', window.scrollY > 8);
+            };
+            window.addEventListener('scroll', onScroll, { passive: true });
+            onScroll();
 
-    // Card spotlight effect
-    document.querySelectorAll('.site-feat-card, .site-price-card').forEach(function(card) {
-        card.addEventListener('mousemove', function(e) {
-            var rect = card.getBoundingClientRect();
-            card.style.setProperty('--mx', (e.clientX - rect.left) + 'px');
-            card.style.setProperty('--my', (e.clientY - rect.top) + 'px');
-        });
-    });
-
-    // Fetch live stats
-    function loadStats() {
-        fetch('/api/stats').then(function(r) { return r.json(); }).then(function(d) {
-            if (typeof d.servers === 'number') {
-                document.getElementById('serverCount').textContent = d.servers;
-                document.getElementById('statServers').textContent = d.servers;
-                var featSrv = document.getElementById('featRibbonServers');
-                if (featSrv) featSrv.textContent = d.servers;
+            // Mobile nav toggle
+            var toggle = document.getElementById('siteNavToggle');
+            var links = document.getElementById('siteNavLinks');
+            if (toggle && links) {
+                toggle.addEventListener('click', function () {
+                    var open = links.classList.toggle('open');
+                    toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+                });
+                links.querySelectorAll('a').forEach(function (a) {
+                    a.addEventListener('click', function () {
+                        links.classList.remove('open');
+                        toggle.setAttribute('aria-expanded', 'false');
+                    });
+                });
             }
-            if (typeof d.users === 'number') {
-                document.getElementById('statUsers').textContent = formatNum(d.users);
-                var featUsers = document.getElementById('featRibbonUsers');
-                if (featUsers) featUsers.textContent = formatNum(d.users);
-            }
-            if (d.uptime) document.getElementById('statUptime').textContent = d.uptime;
-        }).catch(function() {});
 
-        // Fetch threat data for dashboard card
-        fetch('/api/threats').then(function(r) { return r.json(); }).then(function(threatData) {
-            if (!threatData) return;
-
-            // Update protection status
-            if (threatData.protectionStatus) {
-                var statusEl = document.getElementById('mockStatus');
-                var statusCard = document.getElementById('mockStatusCard');
-                if (statusEl) {
-                    statusEl.textContent = threatData.protectionStatus === 'active' ? 'Active' : 'Degraded';
-                    if (statusCard) {
-                        statusCard.classList.remove('site-mock-card-accent');
-                        if (threatData.protectionStatus === 'active') {
-                            statusCard.classList.add('site-mock-card-accent');
+            // Reveal on scroll
+            var revealEls = document.querySelectorAll('.site-reveal');
+            if ('IntersectionObserver' in window) {
+                var io = new IntersectionObserver(function (entries) {
+                    entries.forEach(function (entry) {
+                        if (entry.isIntersecting) {
+                            entry.target.classList.add('visible');
+                            io.unobserve(entry.target);
                         }
-                    }
-                }
-            }
-
-            // Update threats count
-            if (typeof threatData.threatsBlocked === 'number') {
-                var threatsEl = document.getElementById('mockThreats');
-                if (threatsEl) threatsEl.textContent = threatData.threatsBlocked;
-            }
-
-            // Update chart bars based on activity trend
-            if (threatData.activityTrend && threatData.activityTrend.length > 0) {
-                var maxThreat = Math.max(...threatData.activityTrend.map(function(t) { return t.count; }));
-                var barsContainer = document.getElementById('mockChartBars');
-                if (barsContainer) {
-                    barsContainer.innerHTML = '';
-                    threatData.activityTrend.forEach(function(dayData, idx) {
-                        var height = maxThreat > 0 ? ((dayData.count / maxThreat) * 100) : 10;
-                        var isToday = idx === threatData.activityTrend.length - 1;
-                        var bar = document.createElement('div');
-                        bar.className = 'site-mock-bar' + (isToday ? ' site-mock-bar-active' : '');
-                        bar.style.height = height + '%';
-                        bar.title = dayData.count + ' threats on ' + dayData.date;
-                        barsContainer.appendChild(bar);
                     });
-                }
+                }, { threshold: 0.12, rootMargin: '0px 0px -40px 0px' });
+                revealEls.forEach(function (el) { io.observe(el); });
+            } else {
+                revealEls.forEach(function (el) { el.classList.add('visible'); });
             }
 
-            // Update recent threat log
-            if (threatData.recentLog && threatData.recentLog.length > 0) {
-                var logContainer = document.getElementById('mockLog');
-                if (logContainer) {
-                    logContainer.innerHTML = '';
-                    threatData.recentLog.forEach(function(logItem) {
-                        var logItemEl = document.createElement('div');
-                        logItemEl.className = 'site-mock-log-item';
-                        var dotColor = logItem.icon === 'check' ? 'green' : (logItem.icon === 'warn' ? 'orange' : 'blue');
-                        var timeAgo = getTimeAgo(new Date(logItem.timestamp));
-                        logItemEl.innerHTML = '<span class="site-mock-log-dot ' + dotColor + '"></span> ' + logItem.description + ' <span class="site-mock-log-time">' + timeAgo + '</span>';
-                        logContainer.appendChild(logItemEl);
-                    });
-                }
-            }
-        }).catch(function() {});
-    }
+            // Card tilt / spotlight
+            document.querySelectorAll('.js-tilt').forEach(function (card) {
+                card.addEventListener('mousemove', function (e) {
+                    var r = card.getBoundingClientRect();
+                    card.style.setProperty('--mx', (e.clientX - r.left) + 'px');
+                    card.style.setProperty('--my', (e.clientY - r.top) + 'px');
+                });
+            });
 
-    function getTimeAgo(date) {
-        var seconds = Math.floor((new Date() - date) / 1000);
-        var interval = seconds / 31536000;
-        if (interval > 1) return Math.floor(interval) + 'y ago';
-        interval = seconds / 2592000;
-        if (interval > 1) return Math.floor(interval) + 'mo ago';
-        interval = seconds / 86400;
-        if (interval > 1) return Math.floor(interval) + 'd ago';
-        interval = seconds / 3600;
-        if (interval > 1) return Math.floor(interval) + 'h ago';
-        interval = seconds / 60;
-        if (interval > 1) return Math.floor(interval) + 'm ago';
-        return Math.floor(seconds) + 's ago';
-    }
-
-    function formatNum(n) {
-        if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
-        if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
-        return n.toString();
-    }
-    loadStats();
-    setInterval(loadStats, 60000);
-
-    // Invite link
-    var inviteUrl = 'https://discord.com/api/oauth2/authorize?client_id=1439793800309379114&permissions=8&scope=bot%20applications.commands';
-    var inviteBtns = ['inviteBtn', 'heroInvite', 'priceFreeBtn', 'ctaInvite', 'footerInvite'];
-    inviteBtns.forEach(function(id) {
-        var el = document.getElementById(id);
-        if (el) el.addEventListener('click', function(e) { e.preventDefault(); window.open(inviteUrl, '_blank'); });
-    });
-
-    // Pro pricing button now links directly to the live payment page.
-
-    // Mobile toggle
-    var toggle = document.getElementById('siteNavToggle');
-    var links = document.getElementById('siteNavLinks');
-    if (toggle) {
-        toggle.addEventListener('click', function() {
-            var shown = links.style.display === 'flex';
-            links.style.display = shown ? '' : 'flex';
-            links.style.flexDirection = shown ? '' : 'column';
-            links.style.position = shown ? '' : 'absolute';
-            links.style.top = shown ? '' : '100%';
-            links.style.left = shown ? '' : '0';
-            links.style.right = shown ? '' : '0';
-            links.style.background = shown ? '' : 'rgba(6,6,11,0.96)';
-            links.style.padding = shown ? '' : '1rem 1.5rem';
-            links.style.gap = shown ? '' : '0.75rem';
-            links.style.borderBottom = shown ? '' : '1px solid rgba(255,255,255,0.06)';
-        });
-    }
-})();
-</script>
-
+            // Footer year
+            var y = document.getElementById('siteYear');
+            if (y) y.textContent = new Date().getFullYear();
+        })();
+    </script>
+    <script src="js/main.js?v=5"></script>
 </body>
 </html>

@@ -1,7 +1,8 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 
 module.exports = {
-    premium: 'pro',
+    // Basic analytics views are Free; chart-building/export/report → Pro
+    // via bot.subcommandPlanRequirements.
     data: new SlashCommandBuilder()
         .setName('analytics')
         .setDescription('View detailed server analytics and statistics')

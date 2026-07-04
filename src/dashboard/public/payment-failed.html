@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-  <link id="dynamic-theme-stylesheet" rel="stylesheet" href="">
+  <link id="dynamic-theme-stylesheet" rel="stylesheet" href="/api/v4/admin/theme/css">
   <script src="/js/global-theme.js"></script>
     <script src="/js/theme-effects.js"></script>
     <link rel="stylesheet" href="/css/darklock-fx.css">
@@ -302,12 +302,12 @@
 
   <div class="container">
     <div class="error-card">
-      <div class="icon">⚠️</div>
-      <h1>Payment Not Completed</h1>
-      <p class="subtitle">We couldn't process your payment. Don't worry—you haven't been charged.</p>
+      <div class="icon" id="status-icon">⚠️</div>
+      <h1 id="status-title">Payment Not Completed</h1>
+      <p class="subtitle" id="status-subtitle">We couldn't process your payment. Don't worry—you haven't been charged.</p>
       
       <div class="error-box">
-        <div class="error-title">What happened?</div>
+        <div class="error-title" id="error-title">What happened?</div>
         <div class="error-message" id="error-reason">
           The payment was cancelled or an error occurred during checkout.
         </div>
@@ -334,10 +334,10 @@
       </div>
 
       <div class="buttons">
-        <a href="/payment" class="btn btn-primary">
+        <a href="/payment" class="btn btn-primary" id="primary-action">
           <i class="fas fa-redo"></i> Try Again
         </a>
-        <a href="/dashboard" class="btn btn-secondary">
+        <a href="/dashboard" class="btn btn-secondary" id="secondary-action">
           <i class="fas fa-arrow-left"></i> Back to Dashboard
         </a>
       </div>
@@ -351,18 +351,47 @@
   <script>
     // Extract error details from URL if available
     const params = new URLSearchParams(window.location.search);
-    const error = params.get('error');
+    const error = (params.get('error') || '').trim().toLowerCase();
+    const errorMessageParam = (params.get('error_message') || '').trim();
     const errorEl = document.getElementById('error-reason');
+    const errorTitleEl = document.getElementById('error-title');
+    const titleEl = document.getElementById('status-title');
+    const subtitleEl = document.getElementById('status-subtitle');
+    const iconEl = document.getElementById('status-icon');
+    const primaryActionEl = document.getElementById('primary-action');
+    const secondaryActionEl = document.getElementById('secondary-action');
     
     if (error) {
       const errorMessages = {
         'cancelled': 'You cancelled the payment before completing checkout.',
+        'canceled': 'You cancelled the payment before completing checkout.',
         'declined': 'Your payment method was declined by your bank.',
         'timeout': 'The payment session timed out. Please try again.',
         'invalid': 'Invalid payment details were provided.',
         'network': 'A network error occurred during checkout.'
       };
-      errorEl.textContent = errorMessages[error] || error;
+
+      if (error === 'cancelled' || error === 'canceled') {
+        if (iconEl) iconEl.textContent = '↩️';
+        if (titleEl) titleEl.textContent = 'Checkout Cancelled';
+        if (subtitleEl) subtitleEl.textContent = 'No charge was made. You can return to plans and try again anytime.';
+        if (errorTitleEl) errorTitleEl.textContent = 'Status';
+        if (primaryActionEl) primaryActionEl.innerHTML = '<i class="fas fa-credit-card"></i> Back to Plans';
+        if (secondaryActionEl) {
+          secondaryActionEl.href = '/site/pricing';
+          secondaryActionEl.innerHTML = '<i class="fas fa-tag"></i> View Pricing';
+        }
+      }
+
+      let decodedMessage = '';
+      if (errorMessageParam) {
+        try {
+          decodedMessage = decodeURIComponent(errorMessageParam).replace(/[\r\n\t]+/g, ' ').trim();
+        } catch (_) {
+          decodedMessage = errorMessageParam.replace(/[\r\n\t]+/g, ' ').trim();
+        }
+      }
+      errorEl.textContent = errorMessages[error] || decodedMessage || 'An error occurred during checkout.';
     }
   </script>
 </body>

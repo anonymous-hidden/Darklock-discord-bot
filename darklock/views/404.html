@@ -3,61 +3,181 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Page Not Found | Darklock</title>
+    <title>Page Not Found — Darklock</title>
+    <meta name="robots" content="noindex">
+    <meta name="description" content="This page doesn't exist. Find your way back to the Darklock platform, documentation, or system status.">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/platform/static/css/main.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
     <style>
-        .error-page {
-            min-height: 100vh;
+        :root {
+            --nf-bg: #07070c;
+            --nf-panel: rgba(255, 255, 255, 0.03);
+            --nf-border: rgba(255, 255, 255, 0.08);
+            --nf-text: #eef0f6;
+            --nf-text-dim: #9aa1b2;
+            --nf-text-mute: #6b7182;
+            --nf-accent: #6366f1;
+            --nf-accent-soft: rgba(99, 102, 241, 0.14);
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body { height: 100%; }
+        body {
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            background: var(--nf-bg);
+            color: var(--nf-text);
+            -webkit-font-smoothing: antialiased;
             display: flex;
             align-items: center;
             justify-content: center;
-            background: var(--bg-primary);
-            padding: 2rem;
+            padding: 2rem 1.25rem;
+            position: relative;
+            overflow-x: hidden;
         }
-        .error-content {
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background:
+                radial-gradient(ellipse 60% 45% at 50% -5%, rgba(99, 102, 241, 0.12), transparent 65%),
+                radial-gradient(ellipse 40% 35% at 85% 100%, rgba(99, 102, 241, 0.05), transparent 60%);
+            pointer-events: none;
+        }
+        .nf-wrap {
+            width: 100%;
+            max-width: 620px;
             text-align: center;
-            max-width: 500px;
+            position: relative;
+            animation: nf-in 0.5s ease both;
         }
-        .error-code {
-            font-size: 8rem;
-            font-weight: 700;
-            background: linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-secondary) 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
+        @keyframes nf-in {
+            from { opacity: 0; transform: translateY(12px); }
+            to { opacity: 1; transform: none; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            .nf-wrap { animation: none; }
+        }
+        .nf-code {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: clamp(4.5rem, 14vw, 7rem);
+            font-weight: 500;
             line-height: 1;
+            letter-spacing: -0.04em;
+            background: linear-gradient(160deg, #c7caff 0%, var(--nf-accent) 60%, #3f3fa8 100%);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            color: var(--nf-accent);
+            margin-bottom: 0.75rem;
+        }
+        .nf-title {
+            font-size: clamp(1.35rem, 4vw, 1.7rem);
+            font-weight: 700;
+            letter-spacing: -0.02em;
+            margin-bottom: 0.6rem;
+        }
+        .nf-desc {
+            color: var(--nf-text-dim);
+            font-size: 0.98rem;
+            line-height: 1.65;
+            max-width: 46ch;
+            margin: 0 auto 2rem;
+        }
+        .nf-actions {
+            display: flex;
+            gap: 0.75rem;
+            justify-content: center;
+            flex-wrap: wrap;
+            margin-bottom: 2.5rem;
+        }
+        .nf-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.7rem 1.4rem;
+            border-radius: 10px;
+            font-size: 0.92rem;
+            font-weight: 600;
+            text-decoration: none;
+            transition: background 0.2s ease, border-color 0.2s ease, transform 0.15s ease;
+        }
+        .nf-btn:active { transform: scale(0.98); }
+        .nf-btn-primary {
+            background: var(--nf-accent);
+            color: #fff;
+        }
+        .nf-btn-primary:hover { background: #7275f3; }
+        .nf-btn-ghost {
+            background: transparent;
+            color: var(--nf-text-dim);
+            border: 1px solid var(--nf-border);
+        }
+        .nf-btn-ghost:hover { border-color: rgba(255, 255, 255, 0.2); color: var(--nf-text); }
+        .nf-links {
+            border-top: 1px solid var(--nf-border);
+            padding-top: 1.75rem;
+        }
+        .nf-links-label {
+            font-size: 0.72rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            color: var(--nf-text-mute);
             margin-bottom: 1rem;
         }
-        .error-title {
-            font-size: 1.5rem;
-            color: var(--text-primary);
-            margin-bottom: 0.5rem;
-        }
-        .error-desc {
-            color: var(--text-secondary);
-            margin-bottom: 2rem;
-        }
-        .error-actions {
+        .nf-links-grid {
             display: flex;
-            gap: 1rem;
+            flex-wrap: wrap;
             justify-content: center;
+            gap: 0.5rem 0.6rem;
         }
+        .nf-link {
+            display: inline-flex;
+            align-items: center;
+            padding: 0.45rem 0.95rem;
+            border-radius: 999px;
+            border: 1px solid var(--nf-border);
+            background: var(--nf-panel);
+            color: var(--nf-text-dim);
+            font-size: 0.85rem;
+            font-weight: 500;
+            text-decoration: none;
+            transition: border-color 0.2s ease, color 0.2s ease, background 0.2s ease;
+        }
+        .nf-link:hover {
+            border-color: rgba(99, 102, 241, 0.45);
+            background: var(--nf-accent-soft);
+            color: var(--nf-text);
+        }
+        .nf-foot {
+            margin-top: 2.25rem;
+            font-size: 0.8rem;
+            color: var(--nf-text-mute);
+        }
+        .nf-foot a { color: var(--nf-text-dim); text-decoration: none; }
+        .nf-foot a:hover { color: var(--nf-text); text-decoration: underline; }
     </style>
 </head>
 <body>
-    <div class="error-page">
-        <div class="error-content">
-            <div class="error-code">404</div>
-            <h1 class="error-title">Page Not Found</h1>
-            <p class="error-desc">The page you're looking for doesn't exist or has been moved.</p>
-            <div class="error-actions">
-                <a href="/platform" class="btn btn-primary">Go Home</a>
-                <a href="/platform/dashboard" class="btn btn-ghost">Dashboard</a>
-            </div>
+    <main class="nf-wrap">
+        <div class="nf-code" aria-hidden="true">404</div>
+        <h1 class="nf-title">This page doesn't exist</h1>
+        <p class="nf-desc">The link may be outdated, mistyped, or the page may have moved. Nothing is broken on your end &mdash; here's the fastest way back.</p>
+        <div class="nf-actions">
+            <a href="/platform" class="nf-btn nf-btn-primary">Back to Platform</a>
+            <a href="/dashboard" class="nf-btn nf-btn-ghost">Open Dashboard</a>
         </div>
-    </div>
+        <nav class="nf-links" aria-label="Helpful links">
+            <div class="nf-links-label">Looking for one of these?</div>
+            <div class="nf-links-grid">
+                <a class="nf-link" href="/site/">Discord Bot</a>
+                <a class="nf-link" href="/platform/docs">Documentation</a>
+                <a class="nf-link" href="/platform/status">System Status</a>
+                <a class="nf-link" href="/platform/update">Platform Updates</a>
+                <a class="nf-link" href="/platform/ridgeline">Ridgeline</a>
+            </div>
+        </nav>
+        <p class="nf-foot">Still stuck? <a href="/site/bug-reports">Report a broken link</a> and we'll fix it.</p>
+    </main>
 </body>
 </html>

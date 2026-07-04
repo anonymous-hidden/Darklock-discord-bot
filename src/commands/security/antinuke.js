@@ -1,7 +1,8 @@
 const { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } = require('discord.js');
 
 module.exports = {
-    premium: 'pro',
+    // Basic anti-nuke status is Free; advanced controls are gated per-subcommand
+    // via bot.subcommandPlanRequirements (whitelist/quarantine/restore/config → Pro).
     data: new SlashCommandBuilder()
         .setName('antinuke')
         .setDescription('Advanced anti-nuke protection settings')

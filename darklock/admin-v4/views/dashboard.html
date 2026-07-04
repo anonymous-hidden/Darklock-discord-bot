@@ -129,7 +129,7 @@ input,textarea,select{font-family:inherit;font-size:.875rem}
 .toggle-switch input:checked+.toggle-slider::before{transform:translateX(18px);background:#fff}
 
 /* ── Tables ── */
-.table-wrap{overflow-x:auto}
+.table-wrap{overflow-x:auto;overflow-y:auto;max-height:60vh}
 table{width:100%;border-collapse:collapse;font-size:.825rem}
 thead th{text-align:left;padding:.65rem .75rem;font-size:.7rem;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);border-bottom:1px solid var(--border);font-weight:600;white-space:nowrap}
 tbody td{padding:.65rem .75rem;border-bottom:1px solid var(--border);color:var(--text-secondary);vertical-align:middle}
@@ -472,12 +472,16 @@ const ICONS = {
   'chart-bar': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="12" width="4" height="9" rx="1"/><rect x="10" y="7" width="4" height="14" rx="1"/><rect x="17" y="3" width="4" height="18" rx="1"/></svg>',
   'ticket': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 9a3 3 0 010-6h20a3 3 0 010 6"/><path d="M2 15a3 3 0 000 6h20a3 3 0 000-6"/><path d="M2 9h20v6H2z"/><line x1="9" y1="12" x2="9" y2="12.01"/><line x1="12" y1="12" x2="15" y2="12"/></svg>',
   'server': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>',
+  'bar-chart-3': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><rect x="7" y="13" width="3" height="5" rx="1"/><rect x="12" y="9" width="3" height="9" rx="1"/><rect x="17" y="6" width="3" height="12" rx="1"/></svg>',
+  'check-square': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>',
 };
 
 // ── API helper (fixed) ───────────────────────────────────────────────────────────
 function getCSRFToken() {
-  const m = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]+)/);
-  return m ? decodeURIComponent(m[1]) : '';
+  const mPrimary = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]+)/);
+  if (mPrimary) return decodeURIComponent(mPrimary[1]);
+  const mCompat = document.cookie.match(/(?:^|;\s*)_csrf_token=([^;]+)/);
+  return mCompat ? decodeURIComponent(mCompat[1]) : '';
 }
 
 async function api(path, opts = {}) {
@@ -602,10 +606,10 @@ function renderSidebar(tabs) {
 function navigate(tab) {
   currentTab = tab;
   document.querySelectorAll('.nav-item').forEach(el => el.classList.toggle('active', el.dataset.tab === tab));
-  const titleMap = { overview:'Overview', tickets:'Tickets', announcements:'Announcements', accounts:'Accounts', roles:'Role & Access', 'app-updates':'App Updates', shop:'Shop', server:'Server', 'bug-reports':'Bug Reports', 'system-logs':'System Logs', themes:'Themes', maintenance:'Maintenance', settings:'Platform Settings', analytics:'Analytics' };
+  const titleMap = { overview:'Overview', tickets:'Tickets', announcements:'Platform Updates', accounts:'Accounts', roles:'Role & Access', 'app-updates':'App Updates', shop:'Shop', server:'Server', polls:'Polls', tasks:'Tasks', 'bug-reports':'Bug Reports', 'system-logs':'System Logs', maintenance:'Maintenance', settings:'Platform Settings', analytics:'Analytics' };
   document.getElementById('pageTitle').textContent = titleMap[tab] || tab;
   document.getElementById('content').innerHTML = '<div class="loading">Loading...</div>';
-  const loaders = { overview: loadOverview, tickets: loadTickets, announcements: loadAnnouncements, accounts: loadAccounts, roles: loadRoles, 'app-updates': loadAppUpdates, shop: loadShop, server: loadServer, 'bug-reports': loadBugReports, 'system-logs': loadSystemLogs, themes: loadThemes, maintenance: loadMaintenance, settings: loadSettings, analytics: loadAnalytics };
+  const loaders = { overview: loadOverview, tickets: loadTickets, announcements: loadAnnouncements, accounts: loadAccounts, roles: loadRoles, 'app-updates': loadAppUpdates, shop: loadShop, server: loadServer, polls: loadPolls, tasks: loadTasks, 'bug-reports': loadBugReports, 'system-logs': loadSystemLogs, maintenance: loadMaintenance, settings: loadSettings, analytics: loadAnalytics };
   (loaders[tab] || (() => {}))();
   if (window.innerWidth <= 768) document.getElementById('sidebar').classList.remove('mobile-open');
 }
@@ -778,90 +782,639 @@ async function deleteAnnouncement(id) {
 // ═══════════════════════════════════════════════════════════════════════════════
 //  TAB 3: ACCOUNTS
 // ═══════════════════════════════════════════════════════════════════════════════
-let accountsPage = 0, accountsFilter = '', accountsSearch = '';
+let accountsUsersPage = 0, accountsServersPage = 0, accountsFilter = '', accountsSearch = '';
+function loginStatusBadge(a) {
+  const sessions = Number(a && a.active_sessions || 0);
+  if (sessions > 0) {
+    // "Online" if last activity was within 10 minutes, else just "Logged in".
+    const lastActive = a && a.last_active ? Date.parse(a.last_active) : 0;
+    const online = lastActive && (Date.now() - lastActive) < 10 * 60 * 1000;
+    return `<span class="badge badge-green" title="${sessions} active session(s)">${online ? 'Online' : 'Logged in'}</span>`;
+  }
+  return `<span class="badge badge-muted" title="No active session">Logged out</span>`;
+}
 async function loadAccounts() {
   try {
-    const d = await api(`/accounts?limit=20&offset=${accountsPage * 20}${accountsFilter ? `&filter=${accountsFilter}` : ''}${accountsSearch ? `&search=${encodeURIComponent(accountsSearch)}` : ''}`);
-    const total = d.total || 0;
-    const pages = Math.ceil(total / 20) || 1;
+    // Request more servers per page so admins can scroll long server lists
+    const d = await api(`/accounts/summary?accountLimit=50&accountOffset=${accountsUsersPage * 50}&serverLimit=200&serverOffset=${accountsServersPage * 200}${accountsSearch ? `&search=${encodeURIComponent(accountsSearch)}` : ''}${accountsFilter ? `&accountFilter=${encodeURIComponent(accountsFilter)}` : ''}`);
+    const usersTotal = d.accountsTotal || 0;
+    const usersPages = Math.ceil(usersTotal / 20) || 1;
+    const serversTotal = d.serversTotal || 0;
+    const serversPages = Math.ceil(serversTotal / 20) || 1;
     document.getElementById('content').innerHTML = `
       <div class="filter-bar">
         <div class="search-bar">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          <input placeholder="Search users..." value="${esc(accountsSearch)}" onkeydown="if(event.key==='Enter'){accountsSearch=this.value;accountsPage=0;loadAccounts()}" id="accountSearch">
+          <input placeholder="Search users or servers..." value="${esc(accountsSearch)}" onkeydown="if(event.key==='Enter'){accountsSearch=this.value;accountsUsersPage=0;accountsServersPage=0;loadAccounts()}" id="accountSearch">
         </div>
-        ${['','premium','free','admin','banned'].map(f => `<button class="filter-chip${accountsFilter===f?' active':''}" onclick="accountsFilter='${f}';accountsPage=0;loadAccounts()">${f||'All'}</button>`).join('')}
+        <select class="form-select" style="max-width:200px" onchange="accountsFilter=this.value;accountsUsersPage=0;loadAccounts()">
+          <option value="" ${accountsFilter==='' ? 'selected' : ''}>All Users</option>
+          <option value="premium" ${accountsFilter==='premium' ? 'selected' : ''}>Paid (Pro + Enterprise)</option>
+          <option value="pro" ${accountsFilter==='pro' ? 'selected' : ''}>Pro</option>
+          <option value="enterprise" ${accountsFilter==='enterprise' ? 'selected' : ''}>Enterprise</option>
+          <option value="free" ${accountsFilter==='free' ? 'selected' : ''}>Free</option>
+          <option value="admin" ${accountsFilter==='admin' ? 'selected' : ''}>Admins</option>
+          <option value="banned" ${accountsFilter==='banned' ? 'selected' : ''}>Banned</option>
+        </select>
+        <button class="btn btn-secondary" onclick="showCreateServerRecord()">Add/Sync Server</button>
       </div>
-      <div class="card">
+
+      <div class="card" style="margin-bottom:1rem">
+        <div class="card-header">
+          <h3>Discord Plan Grants</h3>
+          <div style="font-size:.8rem;color:var(--text-muted)">Apply plans directly to Discord users or servers (runtime source of truth)</div>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:.75rem;align-items:end">
+          <div>
+            <label class="form-label" for="discordGrantScope">Scope</label>
+            <select class="form-select" id="discordGrantScope">
+              <option value="user">Discord User ID</option>
+              <option value="guild">Discord Server ID</option>
+            </select>
+          </div>
+          <div>
+            <label class="form-label" for="discordGrantTargetId">Discord ID</label>
+            <input class="form-input" id="discordGrantTargetId" placeholder="e.g. 123456789012345678">
+          </div>
+          <div>
+            <label class="form-label" for="discordGrantPlan">Plan</label>
+            <select class="form-select" id="discordGrantPlan">
+              <option value="pro">Pro</option>
+              <option value="enterprise">Enterprise</option>
+              <option value="free">Free (revoke)</option>
+            </select>
+          </div>
+          <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+            <button class="btn btn-primary" onclick="submitDiscordPlanGrant()">Grant / Set Plan</button>
+            <button class="btn btn-secondary" onclick="revokeDiscordPlanGrant()">Revoke</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom:1rem">
+        <div class="card-header">
+          <h3>User Accounts</h3>
+          <div style="font-size:.8rem;color:var(--text-muted)">${usersTotal} total users</div>
+        </div>
         <div class="table-wrap"><table>
-          <thead><tr><th>User</th><th>Email</th><th>Role</th><th>Status</th><th>Joined</th><th>Last Login</th><th></th></tr></thead>
-          <tbody>${(d.accounts || []).length === 0 ? '<tr><td colspan="7" style="text-align:center;padding:2rem;color:var(--text-muted)">No accounts found</td></tr>' :
+          <thead><tr><th>User</th><th>Email</th><th>Role / Plan</th><th>Status</th><th>Logged In</th><th>Created</th><th></th></tr></thead>
+          <tbody>${(d.accounts || []).length === 0 ? '<tr><td colspan="7" style="text-align:center;padding:2rem;color:var(--text-muted)">No user accounts found</td></tr>' :
             (d.accounts || []).map(a => `<tr>
-              <td style="font-weight:600">${esc(a.username || a.display_name || '—')}</td>
+              <td style="font-weight:600">${esc(a.display_name || a.username || 'Unknown')}<br><span style="font-size:.7rem;color:var(--text-muted)">${esc(a.id || '—')}</span></td>
               <td>${esc(a.email || '—')}</td>
-              <td><span class="badge badge-${a.role === 'premium' || a.role === 'vip' ? 'yellow' : a.role === 'admin' || a.role === 'owner' ? 'accent' : 'muted'}">${esc(a.role || 'user')}</span></td>
-              <td><span class="badge badge-${a.active !== 0 ? 'green' : 'red'}">${a.active !== 0 ? 'Active' : 'Banned'}</span></td>
-              <td>${fmtDate(a.created_at)}</td>
-              <td>${fmtDate(a.last_login)}</td>
-              <td><button class="btn btn-secondary btn-sm" onclick="showAccountActions('${a.id}')">Actions</button></td>
+              <td>
+                <span class="badge badge-${a.role === 'owner' || a.role === 'admin' ? 'blue' : a.role === 'premium' || a.role === 'vip' ? 'yellow' : 'muted'}">${esc(a.role || 'user')}</span>
+                <span class="badge badge-${a.plan === 'enterprise' ? 'blue' : a.plan === 'pro' ? 'yellow' : 'muted'}" style="margin-left:.35rem">${esc(String(a.plan || 'free').toUpperCase())}</span>
+              </td>
+              <td><span class="badge badge-${a.active ? 'green' : 'red'}">${a.active ? 'Active' : 'Banned'}</span></td>
+              <td>${loginStatusBadge(a)}</td>
+              <td>${fmtDateTime(a.created_at)}</td>
+              <td><button class="btn btn-secondary btn-sm" onclick="showUserActions('${a.id}')">Actions</button></td>
             </tr>`).join('')}</tbody>
         </table></div>
         <div class="pagination">
-          <div class="pagination-info">${total} total • Page ${accountsPage + 1} of ${pages}</div>
+          <div class="pagination-info">Page ${accountsUsersPage + 1} of ${usersPages}</div>
           <div class="pagination-buttons">
-            <button ${accountsPage===0?'disabled':''} onclick="accountsPage--;loadAccounts()">‹</button>
-            <button ${accountsPage>=pages-1?'disabled':''} onclick="accountsPage++;loadAccounts()">›</button>
+            <button ${accountsUsersPage===0?'disabled':''} onclick="accountsUsersPage--;loadAccounts()">‹</button>
+            <button ${accountsUsersPage>=usersPages-1?'disabled':''} onclick="accountsUsersPage++;loadAccounts()">›</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h3>Bot Servers</h3>
+          <div style="font-size:.8rem;color:var(--text-muted)">${serversTotal} total servers • Live: ${Number(d.liveServerCount||0)} • Recorded: ${Number(d.recordedServerCount||0)}</div>
+        </div>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Server</th><th>Owner User</th><th>Premium</th><th>Status</th><th>Members</th><th>Last Updated</th><th></th></tr></thead>
+          <tbody>${(d.servers || []).length === 0 ? '<tr><td colspan="7" style="text-align:center;padding:2rem;color:var(--text-muted)">No server accounts found</td></tr>' :
+            (d.servers || []).map(a => `<tr>
+              <td style="font-weight:600">
+                ${esc(a.server_name || 'Unnamed Server')}<br>
+                <span style="font-size:.7rem;color:var(--text-muted)">${esc(a.server_id || '—')}</span>
+              </td>
+              <td>${esc(a.owner_user_id || '—')}</td>
+              <td>
+                <span class="badge badge-${a.premium_active ? 'yellow' : 'muted'}">${a.premium_active ? 'Premium' : 'Standard'}</span>
+                ${a.premium_expires_at ? `<div style="font-size:.68rem;color:var(--text-muted);margin-top:.2rem">exp ${fmtDateTime(a.premium_expires_at)}</div>` : ''}
+              </td>
+              <td><span class="badge badge-${a.blocked ? 'red' : 'green'}">${a.blocked ? 'Blocked' : (a.bot_joined ? 'Active' : 'Not Joined')}</span></td>
+              <td>${Number(a.member_count || 0).toLocaleString()}</td>
+              <td>${a.updated_at ? fmtDateTime(a.updated_at) : '<span style="color:var(--text-muted)">Live only</span>'}</td>
+              <td><button class="btn btn-secondary btn-sm" onclick="showServerActions('${a.server_id}')">Actions</button></td>
+            </tr>`).join('')}</tbody>
+        </table></div>
+        <div class="pagination">
+          <div class="pagination-info">${serversTotal} total • Page ${accountsServersPage + 1} of ${serversPages}</div>
+          <div class="pagination-buttons">
+            <button ${accountsServersPage===0?'disabled':''} onclick="accountsServersPage--;loadAccounts()">‹</button>
+            <button ${accountsServersPage>=serversPages-1?'disabled':''} onclick="accountsServersPage++;loadAccounts()">›</button>
           </div>
         </div>
       </div>`;
   } catch (err) { toast(err.message, 'error'); }
 }
 
-function showAccountActions(userId) {
-  openModal('Account Actions', `<div class="loading">Loading account...</div>`, '');
-  api(`/accounts/${userId}`).then(d => {
-    const a = d.account;
+function showCreateServerRecord() {
+  openModal('Sync Server Account', `
+    <div class="form-group"><label class="form-label">Server ID</label><input class="form-input" id="mServerId" placeholder="Discord server ID"></div>
+    <div class="form-group"><label class="form-label">Server Name</label><input class="form-input" id="mServerName" placeholder="Server name"></div>
+    <div class="form-group"><label class="form-label">Owner User ID</label><input class="form-input" id="mOwnerUserId" placeholder="Owner user ID"></div>
+    <div class="form-group"><label class="form-label">Notes</label><textarea class="form-textarea" id="mServerNotes" rows="3" placeholder="Optional notes"></textarea></div>
+    <div class="form-toggle"><label class="toggle-switch"><input type="checkbox" id="mBotJoined" checked><span class="toggle-slider"></span></label><span style="font-size:.85rem">Bot is joined to this server</span></div>
+  `,
+  `<button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+   <button class="btn btn-primary" onclick="submitServerSync()">Save</button>`);
+}
+
+async function submitServerSync() {
+  try {
+    const serverId = document.getElementById('mServerId').value.trim();
+    if (!serverId) return toast('Server ID is required', 'error');
+    await api(`/accounts/servers/${encodeURIComponent(serverId)}/sync`, {
+      method: 'POST',
+      body: JSON.stringify({
+        server_name: document.getElementById('mServerName').value.trim() || null,
+        owner_user_id: document.getElementById('mOwnerUserId').value.trim() || null,
+        notes: document.getElementById('mServerNotes').value.trim() || null,
+        bot_joined: document.getElementById('mBotJoined').checked,
+      })
+    });
+    closeModal();
+    toast('Server synced', 'success');
+    loadAccounts();
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+function showServerActions(serverId) {
+  openModal('Server Actions', `<div class="loading">Loading server...</div>`, '');
+  api(`/accounts/servers/${encodeURIComponent(serverId)}`).then(d => {
+    const a = d.server;
     document.getElementById('modalBody').innerHTML = `
       <div style="margin-bottom:1rem;padding-bottom:1rem;border-bottom:1px solid var(--border)">
-        <div style="font-weight:700;font-size:1rem;margin-bottom:.25rem">${esc(a.username || a.display_name || 'Unknown')}</div>
-        <div style="color:var(--text-secondary);font-size:.85rem">${esc(a.email || '—')}</div>
+        <div style="font-weight:700;font-size:1rem;margin-bottom:.25rem">${esc(a.server_name || 'Unnamed Server')}</div>
+        <div style="color:var(--text-secondary);font-size:.85rem">Server ID: ${esc(a.server_id || '—')}</div>
+        <div style="color:var(--text-secondary);font-size:.85rem">Owner User ID: ${esc(a.owner_user_id || '—')}</div>
         <div style="margin-top:.5rem;display:flex;gap:.5rem">
-          <span class="badge badge-${a.role === 'premium' ? 'yellow' : 'muted'}">${esc(a.role)}</span>
-          <span class="badge badge-${a.active !== 0 ? 'green' : 'red'}">${a.active !== 0 ? 'Active' : 'Banned'}</span>
+          <span class="badge badge-${a.premium_active ? 'yellow' : 'muted'}">${a.premium_active ? 'Premium' : 'Standard'}</span>
+          <span class="badge badge-${a.blocked ? 'red' : 'green'}">${a.blocked ? 'Blocked' : 'Active'}</span>
         </div>
       </div>
-      <p style="font-size:.8rem;color:var(--text-muted);margin-bottom:1rem">Joined ${fmtDateTime(a.created_at)} • Last login ${fmtDateTime(a.last_login)}</p>
+      <p style="font-size:.8rem;color:var(--text-muted);margin-bottom:1rem">Updated ${fmtDateTime(a.updated_at)}${a.premium_expires_at ? ` • Premium expires ${fmtDateTime(a.premium_expires_at)}` : ''}</p>
       <div style="display:flex;flex-direction:column;gap:.5rem">
-        ${a.role !== 'premium' ? `<button class="btn btn-success" onclick="accountAction('${userId}','grant-premium')">Grant Premium</button>` :
-          `<button class="btn btn-secondary" onclick="accountAction('${userId}','remove-premium')">Remove Premium</button>`}
-        ${a.active !== 0 ? `<button class="btn btn-danger" onclick="accountAction('${userId}','ban')">Ban Account</button>` :
-          `<button class="btn btn-success" onclick="accountAction('${userId}','unban')">Unban Account</button>`}
-        <button class="btn btn-secondary" onclick="accountAction('${userId}','reset-password')">Reset Password</button>
-        <button class="btn btn-danger" onclick="accountAction('${userId}','delete')">Delete Account</button>
+        <button class="btn btn-success" onclick="showGrantServerPremium('${a.server_id}')">Grant Premium</button>
+        <button class="btn btn-secondary" onclick="serverAction('${a.server_id}','remove-premium')">Remove Premium</button>
+        ${a.blocked ? `<button class="btn btn-success" onclick="serverAction('${a.server_id}','unblock')">Unblock Server</button>` : `<button class="btn btn-danger" onclick="showBlockServer('${a.server_id}')">Block Server</button>`}
       </div>
-      ${d.devices?.length ? `<div style="margin-top:1.25rem"><div style="font-size:.75rem;color:var(--text-muted);text-transform:uppercase;font-weight:600;margin-bottom:.5rem">Linked Devices (${d.devices.length})</div>
-        ${d.devices.map(dev => `<div style="padding:.5rem;background:var(--bg-input);border-radius:var(--radius-sm);margin-bottom:.35rem;font-size:.8rem">${esc(dev.name || dev.deviceId)} <span class="badge badge-${dev.status==='active'?'green':'muted'}">${esc(dev.status)}</span></div>`).join('')}</div>` : ''}`;
+      ${a.notes ? `<div style="margin-top:1rem;padding:.75rem;background:var(--bg-input);border-radius:var(--radius-sm);font-size:.8rem;color:var(--text-secondary)">${esc(a.notes)}</div>` : ''}`;
   }).catch(err => toast(err.message, 'error'));
 }
 
-async function accountAction(userId, action) {
-  const destructive = ['ban', 'delete', 'reset-password'];
-  if (destructive.includes(action)) {
-    if (!confirm(`Are you sure you want to ${action.replace('-', ' ')} this account?`)) return;
-  }
+async function showUserActions(userId) {
+  openModal('Account Actions', `<div class="loading">Loading account...</div>`, '');
   try {
-    const body = destructive.includes(action) ? JSON.stringify({ confirm: true }) : '{}';
-    const isDelete = action === 'delete';
-    const endpoint = isDelete ? `/accounts/${userId}` : `/accounts/${userId}/${action}`;
-    const d = await api(endpoint, { method: isDelete ? 'DELETE' : 'POST', body });
+    const d = await api(`/accounts/${encodeURIComponent(userId)}`);
+    const a = d.account;
+    const sessions = (d.sessions || []).length;
+    const devices = (d.devices || []).length;
+    document.getElementById('modalBody').innerHTML = `
+      <div style="margin-bottom:1rem;padding-bottom:1rem;border-bottom:1px solid var(--border)">
+        <div style="font-weight:700;font-size:1rem;margin-bottom:.25rem">${esc(a.display_name || a.username || 'Unknown')}</div>
+        <div style="color:var(--text-secondary);font-size:.85rem">User ID: ${esc(a.id || '—')}</div>
+        <div style="color:var(--text-secondary);font-size:.85rem">Email: ${esc(a.email || '—')}</div>
+        <div style="margin-top:.5rem;display:flex;gap:.5rem">
+          <span class="badge badge-${a.role === 'owner' || a.role === 'admin' ? 'blue' : a.role === 'premium' || a.role === 'vip' ? 'yellow' : 'muted'}">${esc(a.role || 'user')}</span>
+          <span class="badge badge-${a.plan === 'enterprise' ? 'blue' : a.plan === 'pro' ? 'yellow' : 'muted'}">${esc(String(a.plan || 'free').toUpperCase())}</span>
+          <span class="badge badge-${a.active ? 'green' : 'red'}">${a.active ? 'Active' : 'Banned'}</span>
+          ${loginStatusBadge(a)}
+        </div>
+        ${a.oauth_provider === 'discord' && a.oauth_id
+          ? `<div style="margin-top:.5rem;color:var(--text-secondary);font-size:.8rem">Discord ID: <code>${esc(a.oauth_id)}</code> \u2014 plan changes sync to the bot automatically.</div>`
+          : `<div style="margin-top:.5rem;color:var(--text-muted);font-size:.8rem">No linked Discord account \u2014 use <strong>Discord Plan Grants</strong> above to grant by Discord ID.</div>`}
+      </div>
+      <p style="font-size:.8rem;color:var(--text-muted);margin-bottom:1rem">Created ${fmtDateTime(a.created_at)} • Last login ${fmtDateTime(a.last_login)}${a.last_active ? ` • Last active ${fmtDateTime(a.last_active)}` : ''} • Sessions ${sessions} • Devices ${devices}</p>
+      <div style="display:flex;flex-direction:column;gap:.5rem">
+        <button class="btn btn-primary" onclick="setUserPlan('${a.id}','pro')">Set Pro Plan</button>
+        <button class="btn btn-primary" onclick="setUserPlan('${a.id}','enterprise')">Set Enterprise Plan</button>
+        <button class="btn btn-secondary" onclick="setUserPlan('${a.id}','free')">Set Free Plan</button>
+        ${a.active ? `<button class="btn btn-danger" onclick="accountAction('${a.id}','ban')">Ban Account</button>` : `<button class="btn btn-success" onclick="accountAction('${a.id}','unban')">Unban Account</button>`}
+        <button class="btn btn-secondary" onclick="accountAction('${a.id}','reset-password')">Reset Password</button>
+        <button class="btn btn-danger" onclick="accountAction('${a.id}','delete')">Delete Account</button>
+      </div>
+    `;
+  } catch (err) { closeModal(); toast(err.message, 'error'); }
+}
+
+async function setUserPlan(userId, plan) {
+  const normalized = String(plan || '').toLowerCase();
+  if (!['free', 'pro', 'enterprise'].includes(normalized)) return;
+  if (!confirm(`Set this account to ${normalized.toUpperCase()} plan?`)) return;
+  try {
+    const d = await api(`/accounts/${encodeURIComponent(userId)}/set-plan`, {
+      method: 'POST',
+      body: JSON.stringify({ confirm: true, plan: normalized })
+    });
     closeModal();
-    toast(d.message || 'Action completed', 'success');
-    if (d.temporaryPassword) {
-      openModal('Temporary Password', `<p style="margin-bottom:1rem;color:var(--text-secondary)">Share this securely with the user:</p><div style="padding:.75rem;background:var(--bg-input);border-radius:var(--radius-sm);font-family:monospace;font-size:1rem;word-break:break-all;user-select:all">${esc(d.temporaryPassword)}</div>`,
-        `<button class="btn btn-primary" onclick="closeModal()">Done</button>`);
-    }
+    toast(d.message || 'Plan updated', 'success');
     loadAccounts();
   } catch (err) { toast(err.message, 'error'); }
+}
+
+function getDiscordGrantForm() {
+  const scope = String(document.getElementById('discordGrantScope')?.value || '').toLowerCase();
+  const targetId = String(document.getElementById('discordGrantTargetId')?.value || '').trim();
+  const plan = String(document.getElementById('discordGrantPlan')?.value || '').toLowerCase();
+  return { scope, targetId, plan };
+}
+
+async function submitDiscordPlanGrant() {
+  try {
+    const { scope, targetId, plan } = getDiscordGrantForm();
+    if (!['user', 'guild'].includes(scope)) return toast('Scope must be user or guild', 'error');
+    if (!/^\d{5,25}$/.test(targetId)) return toast('Enter a valid Discord ID (5-25 digits)', 'error');
+    if (!['free', 'pro', 'enterprise'].includes(plan)) return toast('Plan must be free, pro, or enterprise', 'error');
+    if (!confirm(`Set ${scope} ${targetId} to ${plan.toUpperCase()}?`)) return;
+
+    const d = await api('/accounts/discord-grant', {
+      method: 'POST',
+      body: JSON.stringify({ confirm: true, scope, targetId, plan })
+    });
+
+    toast(d.message || 'Discord plan updated', 'success');
+    loadAccounts();
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+}
+
+async function revokeDiscordPlanGrant() {
+  try {
+    const { scope, targetId } = getDiscordGrantForm();
+    if (!['user', 'guild'].includes(scope)) return toast('Scope must be user or guild', 'error');
+    if (!/^\d{5,25}$/.test(targetId)) return toast('Enter a valid Discord ID (5-25 digits)', 'error');
+    if (!confirm(`Revoke manual plan for ${scope} ${targetId}?`)) return;
+
+    const d = await api('/accounts/discord-revoke', {
+      method: 'POST',
+      body: JSON.stringify({ scope, targetId })
+    });
+
+    toast(d.message || 'Discord plan revoked', 'success');
+    loadAccounts();
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+}
+
+async function accountAction(userId, action) {
+  const destructive = ['ban','delete'];
+  if (destructive.includes(action) && !confirm(`Confirm ${action.replace('-', ' ')} for this account?`)) return;
+  try {
+    let d;
+    if (action === 'delete') {
+      d = await api(`/accounts/${encodeURIComponent(userId)}`, { method: 'DELETE', body: JSON.stringify({ confirm: true }) });
+    } else if (action === 'reset-password') {
+      d = await api(`/accounts/${encodeURIComponent(userId)}/reset-password`, { method: 'POST', body: JSON.stringify({ confirm: true }) });
+      if (d.temporaryPassword) {
+        toast(`Temporary password: ${d.temporaryPassword}`, 'info');
+      }
+    } else {
+      // POST actions: ban, unban
+      d = await api(`/accounts/${encodeURIComponent(userId)}/${action}`, { method: 'POST', body: JSON.stringify({ confirm: true }) });
+    }
+    closeModal();
+    toast(d.message || 'Action completed', 'success');
+    loadAccounts();
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+function showGrantServerPremium(serverId) {
+  openModal('Grant Server Premium', `
+    <div class="form-group"><label class="form-label">Duration</label>
+      <select class="form-select" id="mPremiumDuration" onchange="document.getElementById('customDateWrap').style.display=this.value==='custom'?'block':'none'">
+        <option value="1d">1 day</option>
+        <option value="7d">7 days</option>
+        <option value="30d" selected>30 days</option>
+        <option value="90d">90 days</option>
+        <option value="1y">1 year</option>
+        <option value="lifetime">Lifetime</option>
+        <option value="custom">Custom date</option>
+      </select>
+    </div>
+    <div class="form-group" id="customDateWrap" style="display:none"><label class="form-label">Custom Expiration</label><input class="form-input" id="mCustomDate" type="datetime-local"></div>
+    <p style="font-size:.8rem;color:var(--text-muted)">Confirmation phrase "CONFIRM" is sent automatically for this sensitive action.</p>
+  `,
+  `<button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+   <button class="btn btn-primary" onclick="submitGrantServerPremium('${serverId}')">Grant Premium</button>`);
+}
+
+function showBlockServer(serverId) {
+  openModal('Block Server', `
+    <div class="form-group"><label class="form-label">Reason</label><textarea class="form-textarea" id="mBlockReason" rows="3" placeholder="Reason for block"></textarea></div>
+  `,
+  `<button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+   <button class="btn btn-danger" onclick="submitBlockServer('${serverId}')">Block Server</button>`);
+}
+
+async function submitGrantServerPremium(serverId) {
+  try {
+    await api(`/accounts/servers/${encodeURIComponent(serverId)}/grant-premium`, {
+      method: 'POST',
+      body: JSON.stringify({
+        confirm: true,
+        duration: document.getElementById('mPremiumDuration').value,
+        customDate: document.getElementById('mCustomDate')?.value || undefined,
+      })
+    });
+    closeModal();
+    toast('Server premium granted', 'success');
+    loadAccounts();
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+async function submitBlockServer(serverId) {
+  try {
+    await api(`/accounts/servers/${encodeURIComponent(serverId)}/block`, {
+      method: 'POST',
+      body: JSON.stringify({
+        confirm: true,
+        reason: document.getElementById('mBlockReason').value.trim() || 'Blocked by admin',
+      })
+    });
+    closeModal();
+    toast('Server blocked', 'success');
+    loadAccounts();
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+async function serverAction(serverId, action) {
+  const destructive = ['remove-premium', 'unblock'];
+  if (destructive.includes(action) && !confirm(`Confirm ${action.replace('-', ' ')} for this server?`)) {
+    return;
+  }
+  try {
+    const d = await api(`/accounts/servers/${encodeURIComponent(serverId)}/${action}`, {
+      method: 'POST',
+      body: JSON.stringify({ confirm: true })
+    });
+    closeModal();
+    toast(d.message || 'Action completed', 'success');
+    loadAccounts();
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  TAB: POLLS
+// ═══════════════════════════════════════════════════════════════════════════════
+let pollsFilter = '';
+async function loadPolls() {
+  try {
+    const q = pollsFilter ? `?status=${encodeURIComponent(pollsFilter)}` : '';
+    const d = await api(`/polls${q}`);
+    const list = d.polls || [];
+    document.getElementById('content').innerHTML = `
+      <div class="flex-between mb-2">
+        <div class="filter-bar" style="margin-bottom:0">
+          ${['','draft','published','archived'].map(s => `<button class="filter-chip${pollsFilter===s?' active':''}" onclick="pollsFilter='${s}';loadPolls()">${s||'All'}</button>`).join('')}
+        </div>
+        <button class="btn btn-primary" onclick="showCreatePoll()">New Poll</button>
+      </div>
+      ${list.length === 0 ? '<div class="empty-state"><h4>No polls found</h4><p>Create a poll to start collecting community votes.</p></div>' :
+        list.map(p => `<div class="card mb-1"><div class="card-body" style="display:flex;justify-content:space-between;align-items:flex-start;gap:1rem">
+          <div style="flex:1;min-width:0">
+            <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;margin-bottom:.4rem">
+              <span style="font-weight:700">${esc(p.title)}</span>
+              <span class="badge badge-${p.status==='published'?'green':p.status==='archived'?'red':'yellow'}">${esc(p.status)}</span>
+              <span class="badge badge-blue">${esc(p.type || 'feature')}</span>
+            </div>
+            <p style="font-size:.82rem;color:var(--text-secondary);margin-bottom:.4rem">${esc(truncate(p.description || '', 180) || 'No description')}</p>
+            <span style="font-size:.7rem;color:var(--text-muted)">${p.total_votes || 0} vote(s) • updated ${fmtDateTime(p.updated_at)}</span>
+          </div>
+          <div class="btn-group" style="flex-shrink:0">
+            <button class="btn btn-secondary btn-sm" onclick="showEditPoll('${p.id}')">Edit</button>
+            <button class="btn btn-danger btn-sm" onclick="deletePoll('${p.id}')">Delete</button>
+          </div>
+        </div></div>`).join('')}
+    `;
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+function showCreatePoll() {
+  openModal('Create Poll', `
+    <div class="form-group"><label class="form-label">Title</label><input class="form-input" id="mPollTitle" placeholder="Poll title"></div>
+    <div class="form-group"><label class="form-label">Description</label><textarea class="form-textarea" id="mPollDesc" rows="3" placeholder="Description"></textarea></div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Type</label><input class="form-input" id="mPollType" value="feature"></div>
+      <div class="form-group"><label class="form-label">Status</label><select class="form-select" id="mPollStatus"><option value="draft">Draft</option><option value="published">Published</option><option value="archived">Archived</option></select></div>
+    </div>
+    <div class="form-group"><label class="form-label">Options (one per line, min 2)</label><textarea class="form-textarea" id="mPollOptions" rows="5" placeholder="Option 1\nOption 2"></textarea></div>
+  `,
+  `<button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+   <button class="btn btn-primary" onclick="submitPoll()">Create Poll</button>`);
+}
+
+async function submitPoll() {
+  try {
+    const options = document.getElementById('mPollOptions').value.split('\n').map(x => x.trim()).filter(Boolean);
+    if (options.length < 2) return toast('At least 2 options are required', 'error');
+    await api('/polls', {
+      method: 'POST',
+      body: JSON.stringify({
+        confirm: true,
+        title: document.getElementById('mPollTitle').value.trim(),
+        description: document.getElementById('mPollDesc').value.trim(),
+        type: document.getElementById('mPollType').value.trim() || 'feature',
+        status: document.getElementById('mPollStatus').value,
+        options,
+      })
+    });
+    closeModal(); toast('Poll created', 'success'); loadPolls();
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+async function showEditPoll(id) {
+  try {
+    const d = await api(`/polls/${id}`);
+    const p = d.poll;
+    openModal('Edit Poll', `
+      <div class="form-group"><label class="form-label">Title</label><input class="form-input" id="mPollTitle" value="${esc(p.title)}"></div>
+      <div class="form-group"><label class="form-label">Description</label><textarea class="form-textarea" id="mPollDesc" rows="3">${esc(p.description || '')}</textarea></div>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Type</label><input class="form-input" id="mPollType" value="${esc(p.type || 'feature')}"></div>
+        <div class="form-group"><label class="form-label">Status</label><select class="form-select" id="mPollStatus"><option value="draft" ${p.status==='draft'?'selected':''}>Draft</option><option value="published" ${p.status==='published'?'selected':''}>Published</option><option value="archived" ${p.status==='archived'?'selected':''}>Archived</option></select></div>
+      </div>
+      <div class="form-group"><label class="form-label">Options (one per line)</label><textarea class="form-textarea" id="mPollOptions" rows="5">${esc((p.options || []).map(o => o.option_text).join('\n'))}</textarea></div>
+    `,
+    `<button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+     <button class="btn btn-primary" onclick="updatePoll('${id}')">Save</button>`);
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+async function updatePoll(id) {
+  try {
+    const options = document.getElementById('mPollOptions').value.split('\n').map(x => x.trim()).filter(Boolean);
+    if (options.length < 2) return toast('At least 2 options are required', 'error');
+    await api(`/polls/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        confirm: true,
+        title: document.getElementById('mPollTitle').value.trim(),
+        description: document.getElementById('mPollDesc').value.trim(),
+        type: document.getElementById('mPollType').value.trim() || 'feature',
+        status: document.getElementById('mPollStatus').value,
+        options,
+      })
+    });
+    closeModal(); toast('Poll updated', 'success'); loadPolls();
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+async function deletePoll(id) {
+  if (!confirm('Delete this poll?')) return;
+  try { await api(`/polls/${id}`, { method: 'DELETE', body: JSON.stringify({ confirm: true }) }); toast('Poll deleted', 'success'); loadPolls(); }
+  catch (err) { toast(err.message, 'error'); }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  TAB: TASKS
+// ═══════════════════════════════════════════════════════════════════════════════
+let tasksFilter = '';
+async function loadTasks() {
+  try {
+    const q = tasksFilter ? `?status=${encodeURIComponent(tasksFilter)}` : '';
+    const d = await api(`/tasks${q}`);
+    const list = d.tasks || [];
+    document.getElementById('content').innerHTML = `
+      <div class="flex-between mb-2">
+        <div class="filter-bar" style="margin-bottom:0">
+          ${['','requested','approved','open','in progress','blocked','complete','denied'].map(s => `<button class="filter-chip${tasksFilter===s?' active':''}" onclick="tasksFilter='${s}';loadTasks()">${s||'All'}</button>`).join('')}
+        </div>
+        <div class="btn-group">
+          <button class="btn btn-secondary" onclick="showCreateTaskRequest()">Request Task</button>
+          ${['owner','coowner'].includes(String(shellData?.admin?.role || '').toLowerCase()) ? '<button class="btn btn-primary" onclick="showCreateTaskDirect()">Create Task</button>' : ''}
+        </div>
+      </div>
+      ${list.length === 0 ? '<div class="empty-state"><h4>No tasks yet</h4><p>Create or request tasks to begin workflow tracking.</p></div>' :
+        list.map(t => `<div class="card mb-1"><div class="card-body" style="display:flex;justify-content:space-between;align-items:flex-start;gap:1rem">
+          <div style="flex:1;min-width:0">
+            <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;margin-bottom:.4rem">
+              <span style="font-weight:700">${esc(t.title)}</span>
+              <span class="badge badge-${t.status==='complete'?'green':t.status==='blocked'?'red':t.status==='requested'?'yellow':'blue'}">${esc(t.status)}</span>
+              <span class="badge badge-${t.priority==='urgent'?'red':t.priority==='high'?'yellow':t.priority==='normal'?'blue':'muted'}">${esc(t.priority)}</span>
+              ${t.assigned_role ? `<span class="badge badge-muted">${esc(t.assigned_role)}</span>` : ''}
+            </div>
+            <p style="font-size:.82rem;color:var(--text-secondary);margin-bottom:.4rem">${esc(truncate(t.description || '', 220) || 'No description')}</p>
+            <span style="font-size:.7rem;color:var(--text-muted)">updated ${fmtDateTime(t.updated_at)}${t.due_date ? ` • due ${fmtDateTime(t.due_date)}` : ''}</span>
+          </div>
+          <div class="btn-group" style="flex-shrink:0">
+            <button class="btn btn-secondary btn-sm" onclick="showTaskDetails('${t.id}')">Details</button>
+            ${['owner','coowner'].includes(String(shellData?.admin?.role || '').toLowerCase()) ? `<button class="btn btn-danger btn-sm" onclick="deleteTask('${t.id}')">Delete</button>` : ''}
+          </div>
+        </div></div>`).join('')}
+    `;
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+function showTaskForm(title, submitFn, defaults = {}) {
+  openModal(title, `
+    <div class="form-group"><label class="form-label">Title</label><input class="form-input" id="mTaskTitle" value="${esc(defaults.title || '')}" placeholder="Task title"></div>
+    <div class="form-group"><label class="form-label">Description</label><textarea class="form-textarea" id="mTaskDesc" rows="4" placeholder="Task description">${esc(defaults.description || '')}</textarea></div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Priority</label><select class="form-select" id="mTaskPriority">${['low','normal','high','urgent'].map(p => `<option value="${p}" ${(defaults.priority||'normal')===p?'selected':''}>${p}</option>`).join('')}</select></div>
+      <div class="form-group"><label class="form-label">Category</label><input class="form-input" id="mTaskCategory" value="${esc(defaults.category || '')}" placeholder="tickets, platform_updates, bug_reports..."></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Assigned Role (optional)</label><select class="form-select" id="mTaskAssignedRole"><option value="">None</option>${['helper','bug_tester','pr','mod','admin','coowner'].map(r => `<option value="${r}" ${(defaults.assigned_role||'')===r?'selected':''}>${r}</option>`).join('')}</select></div>
+      <div class="form-group"><label class="form-label">Due Date (optional)</label><input class="form-input" id="mTaskDue" type="datetime-local" value="${defaults.due_date ? esc(defaults.due_date.slice(0,16)) : ''}"></div>
+    </div>
+  `,
+  `<button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+   <button class="btn btn-primary" onclick="${submitFn}()">Save</button>`);
+}
+
+function showCreateTaskRequest() { showTaskForm('Request Task', 'submitTaskRequest'); }
+function showCreateTaskDirect() { showTaskForm('Create Task', 'submitTaskDirect'); }
+
+async function submitTaskRequest() {
+  try {
+    await api('/tasks/request', {
+      method: 'POST',
+      body: JSON.stringify({
+        title: document.getElementById('mTaskTitle').value.trim(),
+        description: document.getElementById('mTaskDesc').value.trim(),
+        priority: document.getElementById('mTaskPriority').value,
+        category: document.getElementById('mTaskCategory').value.trim() || null,
+        due_date: document.getElementById('mTaskDue').value || null,
+      })
+    });
+    closeModal(); toast('Task requested', 'success'); loadTasks();
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+async function submitTaskDirect() {
+  try {
+    await api('/tasks', {
+      method: 'POST',
+      body: JSON.stringify({
+        title: document.getElementById('mTaskTitle').value.trim(),
+        description: document.getElementById('mTaskDesc').value.trim(),
+        priority: document.getElementById('mTaskPriority').value,
+        category: document.getElementById('mTaskCategory').value.trim() || null,
+        assigned_role: document.getElementById('mTaskAssignedRole').value || null,
+        due_date: document.getElementById('mTaskDue').value || null,
+      })
+    });
+    closeModal(); toast('Task created', 'success'); loadTasks();
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+async function showTaskDetails(id) {
+  try {
+    const d = await api(`/tasks/${id}`);
+    const t = d.task;
+    const comments = t.comments || [];
+    openModal(`Task: ${t.title}`, `
+      <div style="margin-bottom:1rem">
+        <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:.5rem">
+          <span class="badge badge-${t.status==='complete'?'green':t.status==='blocked'?'red':t.status==='requested'?'yellow':'blue'}">${esc(t.status)}</span>
+          <span class="badge badge-${t.priority==='urgent'?'red':t.priority==='high'?'yellow':t.priority==='normal'?'blue':'muted'}">${esc(t.priority)}</span>
+          ${t.assigned_role ? `<span class="badge badge-muted">${esc(t.assigned_role)}</span>` : ''}
+          ${t.assigned_user_id ? `<span class="badge badge-muted">user:${esc(t.assigned_user_id)}</span>` : ''}
+        </div>
+        <p style="color:var(--text-secondary);white-space:pre-wrap">${esc(t.description || 'No description')}</p>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Status</label><select class="form-select" id="mTaskStatus">${['requested','approved','open','in progress','blocked','complete','denied'].map(s => `<option value="${s}" ${t.status===s?'selected':''}>${s}</option>`).join('')}</select></div>
+        <div class="form-group"><label class="form-label">Priority</label><select class="form-select" id="mTaskPriority">${['low','normal','high','urgent'].map(p => `<option value="${p}" ${t.priority===p?'selected':''}>${p}</option>`).join('')}</select></div>
+      </div>
+      <div class="form-group"><label class="form-label">Comment</label><textarea class="form-textarea" id="mTaskComment" rows="3" placeholder="Add context for this update"></textarea></div>
+      ${comments.length ? `<div class="divider"></div><div style="font-size:.75rem;color:var(--text-muted);text-transform:uppercase;font-weight:600;margin-bottom:.5rem">Comments</div>
+        <div style="max-height:220px;overflow:auto;display:flex;flex-direction:column;gap:.5rem">${comments.map(c => `<div style="padding:.55rem;background:var(--bg-input);border-radius:var(--radius-sm)"><div style="font-size:.74rem;color:var(--text-muted)">${esc(c.admin_email || 'system')} • ${fmtDateTime(c.created_at)}</div><div style="font-size:.82rem">${esc(c.comment)}</div></div>`).join('')}</div>` : ''}
+    `,
+    `<button class="btn btn-secondary" onclick="closeModal()">Close</button>
+     <button class="btn btn-primary" onclick="saveTask('${id}')">Save Task</button>`);
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+async function saveTask(id) {
+  try {
+    await api(`/tasks/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        status: document.getElementById('mTaskStatus').value,
+        priority: document.getElementById('mTaskPriority').value,
+        comment: document.getElementById('mTaskComment').value.trim() || undefined,
+      })
+    });
+    closeModal(); toast('Task updated', 'success'); loadTasks();
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+async function deleteTask(id) {
+  if (!confirm('Delete this task?')) return;
+  try { await api(`/tasks/${id}`, { method: 'DELETE', body: JSON.stringify({ confirm: true }) }); toast('Task deleted', 'success'); loadTasks(); }
+  catch (err) { toast(err.message, 'error'); }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -912,7 +1465,7 @@ function showCreateAdmin() {
     <div class="form-group"><label class="form-label">Display Name</label><input class="form-input" id="mDisplayName" placeholder="John Doe"></div>
     <div class="form-group"><label class="form-label">Password (min 12 chars)</label><input class="form-input" id="mPassword" type="password" placeholder="Secure password"></div>
     <div class="form-group"><label class="form-label">Role</label><select class="form-select" id="mRole">
-      <option value="helper">Helper</option><option value="mod">Mod</option><option value="admin" selected>Admin</option>
+      <option value="helper">Helper</option><option value="bug_tester">Bug Tester</option><option value="pr">PR</option><option value="mod">Mod</option><option value="admin" selected>Admin</option>
       ${shellData?.admin?.role === 'owner' ? '<option value="coowner">Co-Owner</option>' : ''}
     </select></div>`,
     `<button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
@@ -937,6 +1490,8 @@ function showEditAdmin(id, email, currentRole) {
     <p style="margin-bottom:1rem;color:var(--text-secondary)">Changing role for: <strong>${esc(email)}</strong></p>
     <div class="form-group"><label class="form-label">New Role</label><select class="form-select" id="mRole">
       <option value="helper" ${currentRole==='helper'?'selected':''}>Helper</option>
+      <option value="bug_tester" ${currentRole==='bug_tester'?'selected':''}>Bug Tester</option>
+      <option value="pr" ${currentRole==='pr'?'selected':''}>PR</option>
       <option value="mod" ${currentRole==='mod'?'selected':''}>Mod</option>
       <option value="admin" ${currentRole==='admin'?'selected':''}>Admin</option>
       ${shellData?.admin?.role === 'owner' ? `<option value="coowner" ${currentRole==='coowner'?'selected':''}>Co-Owner</option><option value="owner" ${currentRole==='owner'?'selected':''}>Owner</option>` : ''}
@@ -3356,10 +3911,7 @@ async function saveTicketSettings(guildId) {
 }
 
 async function signOut() {
-  try {
-    await fetch('/signout', { method: 'POST', credentials: 'include', headers: { 'X-CSRF-Token': getCSRFToken() } });
-  } catch (e) { /* ignore */ }
-  window.location.href = '/signin';
+  window.location.href = '/signout';
 }
 
 // ── Init ────────────────────────────────────────────────────────────────────────

@@ -36,7 +36,7 @@ class BaselineGenerator {
         return hashes;
     }
 
-    run() {
+    async run() {
         this.logger.log('\n=================================================');
         this.logger.log('🔒 Anti-Tampering Baseline Generator (HMAC-signed)');
         this.logger.log('=================================================\n');
@@ -67,8 +67,13 @@ if (require.main === module) {
         }
         
         const generator = new BaselineGenerator();
-        generator.run();
-        process.exit(0);
+        generator.run()
+            .then(() => process.exit(0))
+            .catch((err) => {
+                console.error('❌ Baseline generation failed:', err.message || err);
+                process.exit(1);
+            });
+        return;
     } catch (err) {
         console.error('❌ Baseline generation failed:', err.message || err);
         process.exit(1);

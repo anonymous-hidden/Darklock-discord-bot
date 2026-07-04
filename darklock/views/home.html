@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="One security layer for Discord communities, web applications, and digital infrastructure. Explore the Darklock platform and its security applications.">
+    <meta name="theme-color" content="#06060b">
+    <link rel="canonical" href="https://darklock.net/platform">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="Darklock">
+    <meta property="og:title" content="Darklock Platform — One security layer for communities, apps & infrastructure">
+    <meta property="og:description" content="One security layer for Discord communities, web applications, and digital infrastructure.">
+    <meta property="og:url" content="https://darklock.net/platform">
+    <meta name="twitter:card" content="summary">
+    <title>Darklock Platform — One security layer for communities, apps & infrastructure</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="icon" type="image/png" href="/platform/static/icons/darklock-guard.png" sizes="256x256">
+    <link rel="stylesheet" href="/platform/static/css/main.css">
+    <link rel="stylesheet" href="/platform/static/css/site-fx.css">
+    <style>
+        /* ── Platform page specific ── */
+        .pf-hero { padding: 176px 24px 70px; }
+        .pf-hero .container { max-width: 920px; text-align: center; }
+        .pf-hero h1 {
+            font-size: clamp(2.4rem, 5.4vw, 4rem);
+            font-weight: 800; letter-spacing: -0.04em; line-height: 1.06;
+            margin: 22px 0 20px; color: #fff;
+        }
+        .pf-hero p.lead {
+            font-size: 1.12rem; color: rgba(240,242,245,0.72);
+            line-height: 1.7; max-width: 620px; margin: 0 auto 34px;
+        }
+        .pf-hero-actions { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+
+        /* Overview metrics */
+        .pf-overview { padding: 30px 0 0; }
+        .pf-ov-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+        @media (max-width: 820px) { .pf-ov-grid { grid-template-columns: repeat(2, 1fr); } }
+        .pf-ov-card {
+            border-radius: 14px; padding: 22px;
+            border: 1px solid var(--border);
+            background: linear-gradient(165deg, rgba(20,20,34,0.7), rgba(13,13,22,0.7));
+            text-align: center;
+        }
+        .pf-ov-card .v { font-size: 1.7rem; font-weight: 800; letter-spacing: -0.02em; color: #fff; }
+        .pf-ov-card .l { font-size: 0.74rem; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-muted); margin-top: 6px; }
+
+        /* Shared centered head */
+        .lp-head { max-width: 680px; margin: 0 auto 56px; text-align: center; }
+        .lp-head h2 { font-size: clamp(1.9rem, 4vw, 2.7rem); font-weight: 800; letter-spacing: -0.03em; line-height: 1.1; }
+
+        /* App cards */
+        .pf-apps { display: grid; grid-template-columns: repeat(2, 1fr); gap: 22px; }
+        @media (max-width: 880px) { .pf-apps { grid-template-columns: 1fr; } }
+        .pf-app {
+            position: relative; overflow: hidden;
+            border-radius: 20px; padding: 34px 32px;
+            border: 1px solid var(--border);
+            background: linear-gradient(165deg, rgba(20,20,34,0.92), rgba(13,13,22,0.9));
+            display: flex; flex-direction: column;
+        }
+        .pf-app::after {
+            content: ''; position: absolute; top: 0; left: 32px; right: 32px; height: 1px;
+            background: linear-gradient(90deg, transparent, rgba(167,180,255,0.5), transparent);
+        }
+        .pf-app-top { display: flex; align-items: flex-start; gap: 16px; margin-bottom: 18px; }
+        .pf-app-icon {
+            width: 56px; height: 56px; border-radius: 14px; flex: none;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 1.4rem; color: var(--accent-light);
+            background: rgba(99,102,241,0.12); border: 1px solid var(--accent-border);
+        }
+        .pf-app:nth-child(2) .pf-app-icon { background: rgba(34,197,94,0.12); border-color: rgba(34,197,94,0.24); color: #86efac; }
+        .pf-app:nth-child(3) .pf-app-icon { background: rgba(6,182,212,0.13); border-color: rgba(6,182,212,0.24); color: #67e8f9; }
+        .pf-app:nth-child(4) .pf-app-icon { background: rgba(167,139,250,0.14); border-color: rgba(167,139,250,0.24); color: #c4b5fd; }
+        .pf-app-title { flex: 1; }
+        .pf-app-title h3 { font-size: 1.3rem; font-weight: 700; letter-spacing: -0.02em; }
+        .pf-status {
+            display: inline-flex; align-items: center; gap: 7px; margin-top: 6px;
+            font-size: 0.68rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+            padding: 4px 10px; border-radius: 999px;
+        }
+        .pf-status.live { color: #86efac; background: rgba(34,197,94,0.1); border: 1px solid rgba(34,197,94,0.3); }
+        .pf-status.soon { color: #fcd34d; background: rgba(245,158,11,0.1); border: 1px solid rgba(245,158,11,0.3); }
+        .pf-status.beta { color: #93c5fd; background: rgba(59,130,246,0.1); border: 1px solid rgba(59,130,246,0.3); }
+        .pf-status .live-dot { width: 6px; height: 6px; }
+        .pf-app-desc { color: var(--text-secondary); line-height: 1.65; font-size: 0.95rem; margin-bottom: 20px; }
+        .pf-app-meta { display: grid; gap: 12px; margin-bottom: 20px; }
+        .pf-app-meta .row { display: flex; gap: 10px; font-size: 0.86rem; }
+        .pf-app-meta .row .k {
+            flex: none; width: 86px; color: var(--text-muted); font-weight: 600;
+            text-transform: uppercase; letter-spacing: 0.04em; font-size: 0.68rem; padding-top: 2px;
+        }
+        .pf-app-meta .row .val { color: var(--text-secondary); line-height: 1.5; }
+        .pf-app-caps { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 22px; }
+        .pf-app-caps span {
+            font-size: 0.72rem; font-weight: 600; padding: 5px 11px; border-radius: 999px;
+            color: #c7cbe1; background: rgba(255,255,255,0.04); border: 1px solid var(--border);
+        }
+        .pf-app-foot { margin-top: auto; }
+        .pf-app-foot .btn { width: 100%; justify-content: center; }
+
+        /* How it works */
+        .pf-steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+        @media (max-width: 900px) { .pf-steps { grid-template-columns: repeat(2, 1fr); } }
+        @media (max-width: 520px) { .pf-steps { grid-template-columns: 1fr; } }
+        .pf-step {
+            position: relative; border-radius: 16px; padding: 28px 24px;
+            border: 1px solid var(--border); background: rgba(255,255,255,0.02);
+        }
+        .pf-step .n {
+            width: 40px; height: 40px; border-radius: 11px;
+            display: flex; align-items: center; justify-content: center;
+            font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 1rem;
+            color: var(--accent-light); background: rgba(99,102,241,0.12);
+            border: 1px solid var(--accent-border); margin-bottom: 16px;
+        }
+        .pf-step h3 { font-size: 1.05rem; font-weight: 700; margin-bottom: 10px; letter-spacing: -0.01em; }
+        .pf-step p { color: var(--text-secondary); font-size: 0.88rem; line-height: 1.62; }
+        .pf-step .arrow {
+            position: absolute; top: 44px; right: -16px; z-index: 2;
+            color: var(--text-muted); font-size: 0.85rem;
+        }
+        @media (max-width: 900px) { .pf-step .arrow { display: none; } }
+
+        /* Operators */
+        .pf-ops { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; align-items: center; }
+        @media (max-width: 880px) { .pf-ops { grid-template-columns: 1fr; } }
+        .pf-ops-list { display: grid; gap: 14px; }
+        .pf-ops-list .item {
+            display: flex; gap: 14px; padding: 18px 20px;
+            border-radius: 14px; border: 1px solid var(--border); background: rgba(255,255,255,0.02);
+        }
+        .pf-ops-list .item > i {
+            width: 38px; height: 38px; border-radius: 10px; flex: none;
+            display: flex; align-items: center; justify-content: center;
+            color: var(--accent-light); background: rgba(99,102,241,0.12); border: 1px solid var(--accent-border);
+        }
+        .pf-ops-list .item h4 { font-size: 0.98rem; font-weight: 700; margin-bottom: 4px; }
+        .pf-ops-list .item p { color: var(--text-secondary); font-size: 0.86rem; line-height: 1.55; }
+
+        /* Comparison */
+        .pf-compare {
+            border-radius: 20px; overflow: hidden;
+            border: 1px solid var(--border); background: var(--bg-card);
+        }
+        .pf-compare table { width: 100%; border-collapse: collapse; }
+        .pf-compare th, .pf-compare td { padding: 16px 18px; text-align: left; font-size: 0.9rem; border-bottom: 1px solid var(--border); }
+        .pf-compare thead th { font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); font-weight: 700; background: rgba(255,255,255,0.02); }
+        .pf-compare thead th.dl { color: #c7d2fe; }
+        .pf-compare td.feat { color: var(--text); font-weight: 600; }
+        .pf-compare td.col, .pf-compare th.col { text-align: center; color: var(--text-secondary); }
+        .pf-compare td.dl { text-align: center; background: rgba(99,102,241,0.05); }
+        .pf-compare tbody tr:last-child td { border-bottom: none; }
+        .pf-yes { color: var(--success); }
+        .pf-no { color: var(--text-muted); }
+        .pf-partial { color: var(--warning); }
+        @media (max-width: 640px) {
+            .pf-compare { overflow-x: auto; }
+            .pf-compare table { min-width: 560px; }
+        }
+    </style>
+</head>
+<body>
+
+<!-- Navigation -->
+<nav class="nav" id="mainNav">
+    <div class="nav-inner">
+        <a href="/" class="nav-brand" aria-label="Darklock home">
+            <img src="/platform/static/icons/darklock-logo.png" alt="Darklock">
+            <span>Darklock</span>
+        </a>
+        <span class="nav-user" id="navUser">Signed in as <span class="name" id="navUsername">User</span></span>
+        <div class="nav-links" id="navLinks">
+            <a href="#apps">Applications</a>
+            <a href="/site/">Discord Bot</a>
+            <a href="/platform/ridgeline">Ridgeline</a>
+            <a href="/platform/status">Status</a>
+            <a href="/platform/auth/login" id="navSignin">Sign In</a>
+            <a href="/platform/auth/signup" class="btn-cta" id="navSignup">Get Started</a>
+            <a href="/platform/dashboard" class="btn-cta" id="navDash" style="display:none">Dashboard</a>
+        </div>
+        <button class="nav-toggle" id="navToggle" aria-label="Toggle menu" aria-expanded="false">
+            <i class="fas fa-bars"></i>
+        </button>
+    </div>
+</nav>
+
+<!-- Hero -->
+<header class="page-hero pf-hero">
+    <div class="container">
+        <div class="ph-badge"><span class="live-dot"></span> The Darklock Platform</div>
+        <h1>One security layer for communities,<br>apps, and <span class="grad">infrastructure</span>.</h1>
+        <p class="lead">
+            Darklock brings Discord protection, infrastructure monitoring, file integrity, and secure access into a single platform — with one dashboard, one audit trail, and one place to respond. Start with the Discord bot, then expand coverage as you grow.
+        </p>
+        <div class="pf-hero-actions">
+            <a href="/platform/auth/signup" class="btn primary magnetic" id="heroSignup"><i class="fas fa-shield-halved"></i> Start Protecting Now</a>
+            <a href="#apps" class="btn ghost magnetic">Explore Applications <i class="fas fa-arrow-down"></i></a>
+        </div>
+    </div>
+</header>
+
+<!-- Overview metrics -->
+<section class="pf-overview">
+    <div class="container">
+        <div class="pf-ov-grid stagger">
+            <div class="pf-ov-card reveal">
+                <div class="v" id="ovSystems">—</div>
+                <div class="l">Protected Systems</div>
+            </div>
+            <div class="pf-ov-card reveal">
+                <div class="v"><span data-count="24">0</span>/7</div>
+                <div class="l">Active Monitoring</div>
+            </div>
+            <div class="pf-ov-card reveal">
+                <div class="v" id="ovResponse">&lt;100ms</div>
+                <div class="l">Response Time</div>
+            </div>
+            <div class="pf-ov-card reveal">
+                <div class="v" id="ovUptime">99.9%</div>
+                <div class="l">Target Uptime</div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Platform overview copy -->
+<section class="features" style="margin-top:90px">
+    <div class="container">
+        <div class="sect-head reveal">
+            <div class="sect-header-grid">
+                <div class="sect-main-copy">
+                    <div class="sect-topline">
+                        <span class="sect-badge">The Platform</span>
+                        <span class="sect-trust"><i class="fas fa-layer-group"></i> Connected by design</span>
+                    </div>
+                    <h2 class="sect-title">Separate tools leave <span>gaps</span>. Darklock doesn't.</h2>
+                    <p class="sect-sub">Disconnected bots and point tools each see a sliver of the picture. Darklock connects protection, monitoring, and logging so a threat in one place is visible — and actionable — everywhere.</p>
+                    <div class="sect-points" aria-label="Platform strengths">
+                        <span><i class="fas fa-check-circle"></i> Shared audit trail</span>
+                        <span><i class="fas fa-check-circle"></i> Unified dashboard</span>
+                        <span><i class="fas fa-check-circle"></i> Consistent policy</span>
+                    </div>
+                </div>
+                <aside class="sect-ops" aria-label="Platform coverage">
+                    <p class="sect-ops-title">Coverage</p>
+                    <div class="sect-ops-row"><span>Discord Communities</span><strong>Live</strong></div>
+                    <div class="sect-ops-row"><span>Desktop &amp; Files</span><strong>Live</strong></div>
+                    <div class="sect-ops-row"><span>Infrastructure</span><strong>Expanding</strong></div>
+                </aside>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Application cards -->
+<section id="apps" class="suite" style="padding-top:0">
+    <div class="container">
+        <div class="lp-head reveal">
+            <span class="sect-badge">Applications</span>
+            <h2 class="sect-title" style="margin-top:14px">Security apps that share one brain.</h2>
+            <p class="sect-sub" style="margin:14px auto 0;max-width:600px">Each application protects a different surface. Together they give you one coherent security posture.</p>
+        </div>
+        <div class="pf-apps stagger">
+
+            <!-- Discord Security Bot -->
+            <article class="pf-app tilt-card reveal glow-track" data-tilt-max="3">
+                <div class="pf-app-top">
+                    <div class="pf-app-icon"><i class="fab fa-discord"></i></div>
+                    <div class="pf-app-title">
+                        <h3>Discord Security Bot</h3>
+                        <span class="pf-status live"><span class="live-dot"></span> Available now</span>
+                    </div>
+                </div>
+                <p class="pf-app-desc">Real-time protection for Discord servers — stopping raids, nukes, spam, and phishing before they reach your members.</p>
+                <div class="pf-app-meta">
+                    <div class="row"><span class="k">Protects</span><span class="val">Discord communities, channels, members, and roles</span></div>
+                    <div class="row"><span class="k">Built for</span><span class="val">Server admins, moderators, and staff teams</span></div>
+                </div>
+                <div class="pf-app-caps">
+                    <span>Anti-Raid</span><span>Anti-Nuke</span><span>Verification</span><span>Auto-Mod</span><span>Anti-Phishing</span><span>Audit Logs</span>
+                </div>
+                <div class="pf-app-foot">
+                    <a href="/site/" class="btn primary magnetic"><i class="fas fa-arrow-right"></i> Explore the Bot</a>
+                </div>
+            </article>
+
+            <!-- Darklock Guard -->
+            <article class="pf-app tilt-card reveal glow-track" data-tilt-max="3">
+                <div class="pf-app-top">
+                    <div class="pf-app-icon"><i class="fas fa-file-shield"></i></div>
+                    <div class="pf-app-title">
+                        <h3>Darklock Guard</h3>
+                        <span class="pf-status live"><span class="live-dot"></span> Available now</span>
+                    </div>
+                </div>
+                <p class="pf-app-desc">A desktop security agent that watches your critical files and devices — flagging tampering and enforcing zero-trust access.</p>
+                <div class="pf-app-meta">
+                    <div class="row"><span class="k">Protects</span><span class="val">Local files, configs, and device integrity</span></div>
+                    <div class="row"><span class="k">Built for</span><span class="val">Operators and developers running real systems</span></div>
+                </div>
+                <div class="pf-app-caps">
+                    <span>File Integrity</span><span>Tamper Detection</span><span>Zero-Trust Auth</span><span>Hardware Key</span><span>Real-Time Monitor</span>
+                </div>
+                <div class="pf-app-foot">
+                    <a href="/platform/download/darklock-guard" class="btn ghost magnetic"><i class="fas fa-download"></i> Download Guard</a>
+                </div>
+            </article>
+
+            <!-- Threat Monitor -->
+            <article class="pf-app tilt-card reveal glow-track" data-tilt-max="3">
+                <div class="pf-app-top">
+                    <div class="pf-app-icon"><i class="fas fa-satellite-dish"></i></div>
+                    <div class="pf-app-title">
+                        <h3>Threat Monitor</h3>
+                        <span class="pf-status soon"><span class="live-dot" style="background:var(--warning)"></span> Coming soon</span>
+                    </div>
+                </div>
+                <p class="pf-app-desc">Centralized threat intelligence and infrastructure monitoring — correlating signals across your systems into one live view.</p>
+                <div class="pf-app-meta">
+                    <div class="row"><span class="k">Protects</span><span class="val">Web apps, services, and the infrastructure you run</span></div>
+                    <div class="row"><span class="k">Built for</span><span class="val">Teams that need visibility beyond a single surface</span></div>
+                </div>
+                <div class="pf-app-caps">
+                    <span>Threat Feeds</span><span>Health Checks</span><span>Anomaly Alerts</span><span>Incident Timeline</span>
+                </div>
+                <div class="pf-app-foot">
+                    <a href="/platform/update" class="btn ghost magnetic"><i class="fas fa-bell"></i> Follow Progress</a>
+                </div>
+            </article>
+
+            <!-- Secure Vault -->
+            <article class="pf-app tilt-card reveal glow-track" data-tilt-max="3">
+                <div class="pf-app-top">
+                    <div class="pf-app-icon"><i class="fas fa-vault"></i></div>
+                    <div class="pf-app-title">
+                        <h3>Secure Vault</h3>
+                        <span class="pf-status soon"><span class="live-dot" style="background:var(--warning)"></span> Coming soon</span>
+                    </div>
+                </div>
+                <p class="pf-app-desc">Encrypted storage for the secrets that matter — credentials, keys, and sensitive records, sealed and access-controlled.</p>
+                <div class="pf-app-meta">
+                    <div class="row"><span class="k">Protects</span><span class="val">Credentials, tokens, keys, and private records</span></div>
+                    <div class="row"><span class="k">Built for</span><span class="val">Founders and teams handling sensitive data</span></div>
+                </div>
+                <div class="pf-app-caps">
+                    <span>Encrypted at Rest</span><span>Access Controls</span><span>Audit Trail</span><span>Secret Rotation</span>
+                </div>
+                <div class="pf-app-foot">
+                    <a href="/platform/ridgeline" class="btn ghost magnetic"><i class="fas fa-lock"></i> See the Roadmap</a>
+                </div>
+            </article>
+
+        </div>
+    </div>
+</section>
+
+<!-- How it works -->
+<section class="features">
+    <div class="container">
+        <div class="lp-head reveal">
+            <span class="sect-badge">How It Works</span>
+            <h2 class="sect-title" style="margin-top:14px">From connected to protected in four steps.</h2>
+            <p class="sect-sub" style="margin:14px auto 0;max-width:600px">The same flow applies whether you're securing a Discord server, an app, or a system.</p>
+        </div>
+        <div class="pf-steps stagger">
+            <div class="pf-step reveal glow-track">
+                <div class="n">1</div>
+                <h3>Connect</h3>
+                <p>Add the bot to your server, install Guard, or link a system. Setup takes minutes, not migrations.</p>
+                <i class="fas fa-arrow-right arrow"></i>
+            </div>
+            <div class="pf-step reveal glow-track">
+                <div class="n">2</div>
+                <h3>Define rules</h3>
+                <p>Choose your thresholds, verification, and automated responses — or start with secure defaults.</p>
+                <i class="fas fa-arrow-right arrow"></i>
+            </div>
+            <div class="pf-step reveal glow-track">
+                <div class="n">3</div>
+                <h3>Monitor</h3>
+                <p>Darklock watches activity continuously and surfaces threats the moment they appear.</p>
+                <i class="fas fa-arrow-right arrow"></i>
+            </div>
+            <div class="pf-step reveal glow-track">
+                <div class="n">4</div>
+                <h3>Block &amp; escalate</h3>
+                <p>Threats are blocked, logged, and escalated to your team — with a full record to act on.</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Built for operators -->
+<section class="suite">
+    <div class="container">
+        <div class="pf-ops">
+            <div class="reveal-left">
+                <span class="sect-badge" style="margin-bottom:18px;display:inline-block">Built for Operators</span>
+                <h2 class="sect-title">Security controls your<br>team can actually use.</h2>
+                <p class="sect-sub" style="margin-top:14px">Darklock is built for the people who keep communities and systems running — clear controls, no guesswork, and a record behind every decision.</p>
+                <div class="hero-actions" style="justify-content:flex-start;margin-top:28px;margin-bottom:0">
+                    <a href="/platform/auth/signup" class="btn primary magnetic"><i class="fas fa-user-shield"></i> Get Started Free</a>
+                </div>
+            </div>
+            <div class="pf-ops-list stagger">
+                <div class="item reveal">
+                    <i class="fas fa-user-gear"></i>
+                    <div><h4>Admins</h4><p>One dashboard for policy, visibility, and response across everything you protect.</p></div>
+                </div>
+                <div class="item reveal">
+                    <i class="fas fa-gavel"></i>
+                    <div><h4>Moderators</h4><p>Consistent, explainable enforcement with the context to act fast and fairly.</p></div>
+                </div>
+                <div class="item reveal">
+                    <i class="fas fa-people-group"></i>
+                    <div><h4>Teams &amp; founders</h4><p>Role-based access and audit trails that keep accountability clear as you scale.</p></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Comparison -->
+<section class="features">
+    <div class="container">
+        <div class="lp-head reveal">
+            <span class="sect-badge">Why Darklock</span>
+            <h2 class="sect-title" style="margin-top:14px">More complete than a bot. More connected than tools.</h2>
+            <p class="sect-sub" style="margin:14px auto 0;max-width:600px">A single basic bot or a pile of disconnected tools leaves gaps. Here's how the coverage compares.</p>
+        </div>
+        <div class="pf-compare reveal">
+            <table>
+                <thead>
+                    <tr>
+                        <th scope="col">Capability</th>
+                        <th scope="col" class="col dl">Darklock</th>
+                        <th scope="col" class="col">Basic bot</th>
+                        <th scope="col" class="col">Disconnected tools</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td class="feat">Anti-raid &amp; anti-nuke</td>
+                        <td class="dl"><i class="fas fa-check pf-yes" aria-label="Full"></i></td>
+                        <td class="col"><i class="fas fa-minus pf-partial" aria-label="Partial"></i></td>
+                        <td class="col"><i class="fas fa-xmark pf-no" aria-label="Not covered"></i></td>
+                    </tr>
+                    <tr>
+                        <td class="feat">Real-time automated response</td>
+                        <td class="dl"><i class="fas fa-check pf-yes" aria-label="Full"></i></td>
+                        <td class="col"><i class="fas fa-minus pf-partial" aria-label="Partial"></i></td>
+                        <td class="col"><i class="fas fa-minus pf-partial" aria-label="Partial"></i></td>
+                    </tr>
+                    <tr>
+                        <td class="feat">File integrity protection</td>
+                        <td class="dl"><i class="fas fa-check pf-yes" aria-label="Full"></i></td>
+                        <td class="col"><i class="fas fa-xmark pf-no" aria-label="Not covered"></i></td>
+                        <td class="col"><i class="fas fa-check pf-yes" aria-label="Full"></i></td>
+                    </tr>
+                    <tr>
+                        <td class="feat">Unified audit trail</td>
+                        <td class="dl"><i class="fas fa-check pf-yes" aria-label="Full"></i></td>
+                        <td class="col"><i class="fas fa-xmark pf-no" aria-label="Not covered"></i></td>
+                        <td class="col"><i class="fas fa-xmark pf-no" aria-label="Not covered"></i></td>
+                    </tr>
+                    <tr>
+                        <td class="feat">Single dashboard</td>
+                        <td class="dl"><i class="fas fa-check pf-yes" aria-label="Full"></i></td>
+                        <td class="col"><i class="fas fa-minus pf-partial" aria-label="Partial"></i></td>
+                        <td class="col"><i class="fas fa-xmark pf-no" aria-label="Not covered"></i></td>
+                    </tr>
+                    <tr>
+                        <td class="feat">Role-based access controls</td>
+                        <td class="dl"><i class="fas fa-check pf-yes" aria-label="Full"></i></td>
+                        <td class="col"><i class="fas fa-minus pf-partial" aria-label="Partial"></i></td>
+                        <td class="col"><i class="fas fa-minus pf-partial" aria-label="Partial"></i></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        <p style="text-align:center;color:var(--text-muted);font-size:0.8rem;margin-top:18px">
+            <i class="fas fa-check pf-yes"></i> Full &nbsp;·&nbsp; <i class="fas fa-minus pf-partial"></i> Partial / varies &nbsp;·&nbsp; <i class="fas fa-xmark pf-no"></i> Not covered
+        </p>
+    </div>
+</section>
+
+<!-- CTA -->
+<section class="cta">
+    <div class="container">
+        <div class="cta-inner reveal">
+            <h2>One platform. Every layer of protection.</h2>
+            <p>Start with the Discord bot today, then expand coverage across your apps and infrastructure as you grow.</p>
+            <div class="cta-btns">
+                <a href="/platform/auth/signup" class="btn primary magnetic"><i class="fas fa-shield-halved"></i> Start Protecting Now</a>
+                <a href="/site/" class="btn ghost magnetic"><i class="fab fa-discord"></i> Add to Discord</a>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Footer -->
+<footer class="footer">
+    <div class="container">
+        <div class="footer-grid">
+            <div class="footer-brand-block">
+                <div class="logo">
+                    <img src="/platform/static/icons/darklock-logo.png" alt="Darklock">
+                    <span>Darklock</span>
+                </div>
+                <p class="tagline">Security for digital communities, web applications, and the infrastructure behind them.</p>
+            </div>
+            <div class="footer-col">
+                <h4>Platform</h4>
+                <a href="#apps">Applications</a>
+                <a href="/site/">Discord Bot</a>
+                <a href="/platform/ridgeline">Ridgeline</a>
+                <a href="/platform/download/darklock-guard">Darklock Guard</a>
+            </div>
+            <div class="footer-col">
+                <h4>Resources</h4>
+                <a href="/platform/docs">Documentation</a>
+                <a href="/platform/update">Platform Updates</a>
+                <a href="/platform/status">System Status</a>
+                <a href="/site/bug-reports">Report a Bug</a>
+            </div>
+            <div class="footer-col">
+                <h4>Legal</h4>
+                <a href="/platform/privacy">Privacy Policy</a>
+                <a href="/platform/terms">Terms of Service</a>
+                <a href="/platform/security">Security</a>
+            </div>
+        </div>
+        <div class="footer-bottom">
+            <p>&copy; 2026 Darklock. All rights reserved.</p>
+            <div class="footer-social">
+                <a href="https://github.com/anonymous-hidden?tab=repositories" target="_blank" rel="noopener" aria-label="GitHub"><i class="fab fa-github"></i></a>
+                <a href="https://discord.gg/Vsq9PUTrgb" target="_blank" rel="noopener" aria-label="Discord"><i class="fab fa-discord"></i></a>
+            </div>
+        </div>
+    </div>
+</footer>
+
+<script src="/platform/static/js/site-fx.js"></script>
+<script>
+(function () {
+    'use strict';
+
+    /* ── Auth-aware nav ── */
+    try {
+        var u = window.DARKLOCK_USER;
+        if (u && u.username) {
+            var navUser = document.getElementById('navUser');
+            var navName = document.getElementById('navUsername');
+            var navSignin = document.getElementById('navSignin');
+            var navSignup = document.getElementById('navSignup');
+            var navDash = document.getElementById('navDash');
+            if (navName) navName.textContent = u.displayName || u.username;
+            if (navUser) navUser.style.display = 'inline';
+            if (navSignin) navSignin.style.display = 'none';
+            if (navSignup) navSignup.style.display = 'none';
+            if (navDash) navDash.style.display = 'inline-flex';
+            var heroSignup = document.getElementById('heroSignup');
+            if (heroSignup) { heroSignup.setAttribute('href', '/platform/dashboard'); heroSignup.innerHTML = '<i class="fas fa-gauge-high"></i> Go to Dashboard'; }
+        }
+    } catch (e) {}
+
+    function fmt(n) {
+        if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+        if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
+        return String(n);
+    }
+
+    /* ── Live latency ── */
+    function probeLatency() {
+        var t0 = performance.now();
+        fetch('/platform/api/metrics').then(function (r) {
+            if (!r.ok) return;
+            var ms = Math.round(performance.now() - t0);
+            var el = document.getElementById('ovResponse');
+            if (el) el.textContent = ms + 'ms';
+        }).catch(function () {});
+    }
+    probeLatency();
+    setInterval(probeLatency, 30000);
+
+    /* ── Live protected systems / uptime ── */
+    function loadStats() {
+        fetch('/api/stats').then(function (r) { return r.ok ? r.json() : null; }).then(function (d) {
+            if (!d) return;
+            if (typeof d.servers === 'number' && d.servers > 0) {
+                var s = document.getElementById('ovSystems');
+                if (s) s.textContent = fmt(d.servers);
+            }
+            if (d.uptime) {
+                var up = document.getElementById('ovUptime');
+                if (up) up.textContent = d.uptime;
+            }
+        }).catch(function () {});
+    }
+    loadStats();
+    setInterval(loadStats, 60000);
+})();
+</script>
+
+</body>
+</html>

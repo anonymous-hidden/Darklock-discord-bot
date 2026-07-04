@@ -168,7 +168,7 @@ class TamperProtectionSystem {
 
     async regenerateBaseline(triggeredBy = 'system') {
         const generator = new BaselineGenerator(this.logger);
-        const baseline = generator.run();
+        const baseline = await generator.run();
         this.buildProtectedSet();
         this.validator.setBaseline(baseline);
         if (this.watcher) {

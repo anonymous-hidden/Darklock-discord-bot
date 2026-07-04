@@ -46,7 +46,7 @@ async function getOverviewStats() {
 async function getAnnouncements({ limit = 50, offset = 0 } = {}) {
   return db.all(`
     SELECT * FROM platform_announcements
-    ORDER BY pinned DESC, created_at DESC
+    ORDER BY pinned DESC, COALESCE(published_at, created_at) DESC
     LIMIT ? OFFSET ?
   `, [limit, offset]);
 }
@@ -55,25 +55,50 @@ async function getAnnouncementById(id) {
   return db.get(`SELECT * FROM platform_announcements WHERE id = ?`, [id]);
 }
 
-async function createAnnouncement({ id, title, content, version, visibility, pinned, author_id, author_email }) {
+async function createAnnouncement({ id, title, content, version, category, status, visibility, pinned, author_id, author_email, published_at }) {
   await db.run(`
-    INSERT INTO platform_announcements (id, title, content, version, visibility, pinned, author_id, author_email)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `, [id, title, content, version || null, visibility || 'public', pinned ? 1 : 0, author_id, author_email]);
+    INSERT INTO platform_announcements (id, title, content, version, category, status, visibility, pinned, author_id, author_email, published_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `, [
+    id,
+    title,
+    content,
+    version || null,
+    category || 'update',
+    status || 'published',
+    visibility || 'public',
+    pinned ? 1 : 0,
+    author_id,
+    author_email,
+    published_at || new Date().toISOString(),
+  ]);
   return getAnnouncementById(id);
 }
 
-async function updateAnnouncement(id, { title, content, version, visibility, pinned }) {
+async function updateAnnouncement(id, { title, content, version, category, status, visibility, pinned, published_at }) {
   await db.run(`
     UPDATE platform_announcements
     SET title = COALESCE(?, title),
         content = COALESCE(?, content),
         version = COALESCE(?, version),
+        category = COALESCE(?, category),
+        status = COALESCE(?, status),
         visibility = COALESCE(?, visibility),
+        published_at = COALESCE(?, published_at),
         pinned = COALESCE(?, pinned),
         updated_at = datetime('now')
     WHERE id = ?
-  `, [title, content, version, visibility, pinned !== undefined ? (pinned ? 1 : 0) : undefined, id]);
+  `, [
+    title,
+    content,
+    version,
+    category,
+    status,
+    visibility,
+    published_at,
+    pinned !== undefined ? (pinned ? 1 : 0) : undefined,
+    id,
+  ]);
   return getAnnouncementById(id);
 }
 
@@ -96,31 +121,41 @@ async function getNextAnnouncementVersion() {
 // ═══════════════════════════════════════════════════════════════════════════════
 //  ACCOUNTS (users table)
 // ═══════════════════════════════════════════════════════════════════════════════
+const EFFECTIVE_PLAN_SQL = `COALESCE(NULLIF(up.plan, ''), CASE WHEN u.role IN ('premium','vip') THEN 'pro' ELSE 'free' END)`;
+
 async function getAccounts({ search, filter, limit = 50, offset = 0 } = {}) {
   let where = [];
   let params = [];
 
   if (search) {
-    where.push(`(username LIKE ? OR email LIKE ? OR display_name LIKE ?)`);
+    where.push(`(u.username LIKE ? OR u.email LIKE ? OR u.display_name LIKE ?)`);
     const q = `%${search}%`;
     params.push(q, q, q);
   }
 
-  if (filter === 'premium')  { where.push(`(role = 'premium' OR role = 'vip')`); }
-  if (filter === 'free')     { where.push(`role = 'user'`); }
-  if (filter === 'admin')    { where.push(`role IN ('admin','owner')`); }
-  if (filter === 'banned')   { where.push(`active = 0`); }
+  if (filter === 'premium' || filter === 'paid') { where.push(`${EFFECTIVE_PLAN_SQL} IN ('pro','enterprise')`); }
+  if (filter === 'pro')       { where.push(`${EFFECTIVE_PLAN_SQL} = 'pro'`); }
+  if (filter === 'enterprise'){ where.push(`${EFFECTIVE_PLAN_SQL} = 'enterprise'`); }
+  if (filter === 'free')      { where.push(`${EFFECTIVE_PLAN_SQL} = 'free'`); }
+  if (filter === 'admin')     { where.push(`u.role IN ('admin','owner')`); }
+  if (filter === 'banned')    { where.push(`u.active = 0`); }
 
   const whereClause = where.length > 0 ? `WHERE ${where.join(' AND ')}` : '';
+  const fromClause = `FROM users u LEFT JOIN admin_user_plans up ON up.user_id = u.id`;
 
   const [rows, countRow] = await Promise.all([
     db.all(`
-      SELECT id, username, email, display_name, role, avatar, active, created_at, last_login
-      FROM users ${whereClause}
-      ORDER BY created_at DESC
+      SELECT
+        u.id, u.username, u.email, u.display_name, u.role, u.avatar, u.active, u.created_at, u.last_login,
+        u.oauth_provider, u.oauth_id,
+        ${EFFECTIVE_PLAN_SQL} AS plan,
+        (SELECT COUNT(*) FROM sessions s WHERE s.user_id = u.id AND s.revoked_at IS NULL AND s.expires_at > datetime('now')) AS active_sessions,
+        (SELECT MAX(s.last_active) FROM sessions s WHERE s.user_id = u.id) AS last_active
+      ${fromClause} ${whereClause}
+      ORDER BY u.created_at DESC
       LIMIT ? OFFSET ?
     `, [...params, limit, offset]),
-    db.get(`SELECT COUNT(*) as total FROM users ${whereClause}`, params),
+    db.get(`SELECT COUNT(*) as total ${fromClause} ${whereClause}`, params),
   ]);
 
   return { accounts: rows || [], total: countRow?.total || 0 };
@@ -128,13 +163,47 @@ async function getAccounts({ search, filter, limit = 50, offset = 0 } = {}) {
 
 async function getAccountById(userId) {
   return db.get(`
-    SELECT id, username, email, display_name, role, avatar, active, created_at, last_login, settings
-    FROM users WHERE id = ?
+    SELECT
+      u.id, u.username, u.email, u.display_name, u.role, u.avatar, u.active, u.created_at, u.last_login, u.settings,
+      u.oauth_provider, u.oauth_id,
+      ${EFFECTIVE_PLAN_SQL} AS plan,
+      (SELECT COUNT(*) FROM sessions s WHERE s.user_id = u.id AND s.revoked_at IS NULL AND s.expires_at > datetime('now')) AS active_sessions,
+      (SELECT MAX(s.last_active) FROM sessions s WHERE s.user_id = u.id) AS last_active
+    FROM users u
+    LEFT JOIN admin_user_plans up ON up.user_id = u.id
+    WHERE u.id = ?
   `, [userId]);
 }
 
 async function updateAccountRole(userId, role) {
   return db.run(`UPDATE users SET role = ?, updated_at = datetime('now') WHERE id = ?`, [role, userId]);
+}
+
+async function setAccountPlan(userId, plan, assignedBy) {
+  const normalizedPlan = String(plan || '').trim().toLowerCase();
+  if (!['free', 'pro', 'enterprise'].includes(normalizedPlan)) {
+    throw new Error('Invalid plan. Use free, pro, or enterprise.');
+  }
+
+  const existing = await db.get(`SELECT id, role FROM users WHERE id = ?`, [userId]);
+  if (!existing) throw new Error('Account not found');
+
+  await db.run(`
+    INSERT INTO admin_user_plans (user_id, plan, assigned_by, created_at, updated_at)
+    VALUES (?, ?, ?, datetime('now'), datetime('now'))
+    ON CONFLICT(user_id) DO UPDATE SET
+      plan = excluded.plan,
+      assigned_by = excluded.assigned_by,
+      updated_at = datetime('now')
+  `, [userId, normalizedPlan, assignedBy || null]);
+
+  const role = String(existing.role || '').toLowerCase();
+  if (!['owner', 'coowner', 'admin', 'mod', 'pr', 'helper', 'bug_tester'].includes(role)) {
+    const mappedRole = normalizedPlan === 'free' ? 'user' : 'premium';
+    await db.run(`UPDATE users SET role = ?, updated_at = datetime('now') WHERE id = ?`, [mappedRole, userId]);
+  }
+
+  return getAccountById(userId);
 }
 
 async function banAccount(userId) {
@@ -170,6 +239,112 @@ async function getAccountDevices(userId) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+//  SERVER ACCOUNTS (Guild/Server Management)
+// ═══════════════════════════════════════════════════════════════════════════════
+async function upsertServerAccount({
+  server_id,
+  server_name,
+  owner_user_id,
+  premium_active,
+  premium_expires_at,
+  premium_plan,
+  blocked,
+  blocked_reason,
+  bot_joined,
+  notes,
+  updated_by,
+}) {
+  await db.run(`
+    INSERT INTO admin_server_accounts (
+      server_id, server_name, owner_user_id, premium_active, premium_expires_at,
+      premium_plan, blocked, blocked_reason, bot_joined, notes, updated_at, updated_by
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), ?)
+    ON CONFLICT(server_id) DO UPDATE SET
+      server_name = COALESCE(excluded.server_name, admin_server_accounts.server_name),
+      owner_user_id = COALESCE(excluded.owner_user_id, admin_server_accounts.owner_user_id),
+      premium_active = COALESCE(excluded.premium_active, admin_server_accounts.premium_active),
+      premium_expires_at = COALESCE(excluded.premium_expires_at, admin_server_accounts.premium_expires_at),
+      premium_plan = COALESCE(excluded.premium_plan, admin_server_accounts.premium_plan),
+      blocked = COALESCE(excluded.blocked, admin_server_accounts.blocked),
+      blocked_reason = COALESCE(excluded.blocked_reason, admin_server_accounts.blocked_reason),
+      bot_joined = COALESCE(excluded.bot_joined, admin_server_accounts.bot_joined),
+      notes = COALESCE(excluded.notes, admin_server_accounts.notes),
+      updated_at = datetime('now'),
+      updated_by = excluded.updated_by
+  `, [
+    server_id,
+    server_name || null,
+    owner_user_id || null,
+    premium_active === undefined ? null : (premium_active ? 1 : 0),
+    premium_expires_at || null,
+    premium_plan || null,
+    blocked === undefined ? null : (blocked ? 1 : 0),
+    blocked_reason || null,
+    bot_joined === undefined ? null : (bot_joined ? 1 : 0),
+    notes || null,
+    updated_by || null,
+  ]);
+
+  return db.get(`SELECT * FROM admin_server_accounts WHERE server_id = ?`, [server_id]);
+}
+
+async function searchServerAccounts({ q, limit = 50, offset = 0 } = {}) {
+  const query = String(q || '').trim();
+  if (!query) {
+    const rows = await db.all(`
+      SELECT * FROM admin_server_accounts
+      ORDER BY updated_at DESC, server_id ASC
+      LIMIT ? OFFSET ?
+    `, [limit, offset]);
+    const total = await db.get(`SELECT COUNT(*) AS total FROM admin_server_accounts`);
+    return { servers: rows || [], total: total?.total || 0 };
+  }
+
+  const like = `%${query}%`;
+  const rows = await db.all(`
+    SELECT * FROM admin_server_accounts
+    WHERE server_id = ?
+       OR server_name LIKE ?
+       OR owner_user_id LIKE ?
+    ORDER BY updated_at DESC, server_id ASC
+    LIMIT ? OFFSET ?
+  `, [query, like, like, limit, offset]);
+
+  const total = await db.get(`
+    SELECT COUNT(*) AS total
+    FROM admin_server_accounts
+    WHERE server_id = ?
+       OR server_name LIKE ?
+       OR owner_user_id LIKE ?
+  `, [query, like, like]);
+
+  return { servers: rows || [], total: total?.total || 0 };
+}
+
+async function getServerAccountById(serverId) {
+  return db.get(`SELECT * FROM admin_server_accounts WHERE server_id = ?`, [serverId]);
+}
+
+async function setServerPremium({ server_id, premium_active, premium_expires_at, premium_plan, updated_by }) {
+  return upsertServerAccount({
+    server_id,
+    premium_active,
+    premium_expires_at,
+    premium_plan,
+    updated_by,
+  });
+}
+
+async function setServerBlocked({ server_id, blocked, blocked_reason, updated_by }) {
+  return upsertServerAccount({
+    server_id,
+    blocked,
+    blocked_reason,
+    updated_by,
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 //  ROLES & ACCESS
 // ═══════════════════════════════════════════════════════════════════════════════
 async function getAdminUsers() {
@@ -201,6 +376,236 @@ async function updateAdminRole(adminId, newRole) {
 
 async function deleteAdmin(adminId) {
   return db.run(`DELETE FROM admins WHERE id = ?`, [adminId]);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  POLLS (Admin tab + public /platform/polls)
+// ═══════════════════════════════════════════════════════════════════════════════
+async function getPolls({ status, limit = 100, offset = 0 } = {}) {
+  const where = [];
+  const params = [];
+  if (status) {
+    where.push('p.status = ?');
+    params.push(status);
+  }
+  const whereClause = where.length ? `WHERE ${where.join(' AND ')}` : '';
+
+  const polls = await db.all(`
+    SELECT p.*,
+           COUNT(DISTINCT pv.id) AS total_votes
+    FROM polls p
+    LEFT JOIN poll_votes pv ON p.id = pv.poll_id
+    ${whereClause}
+    GROUP BY p.id
+    ORDER BY p.updated_at DESC, p.created_at DESC
+    LIMIT ? OFFSET ?
+  `, [...params, limit, offset]);
+
+  const count = await db.get(`SELECT COUNT(*) AS total FROM polls p ${whereClause}`, params);
+  return { polls: polls || [], total: count?.total || 0 };
+}
+
+async function getPollById(id) {
+  const poll = await db.get(`SELECT * FROM polls WHERE id = ?`, [id]);
+  if (!poll) return null;
+  const options = await db.all(`SELECT id, option_text, votes FROM poll_options WHERE poll_id = ? ORDER BY rowid ASC`, [id]);
+  return { ...poll, options: options || [] };
+}
+
+async function createPoll({ id, title, description, type, status, options, created_by, updated_by, published_by }) {
+  const now = new Date().toISOString();
+  await db.run(`
+    INSERT INTO polls (id, title, description, type, status, created_by, updated_by, published_by, created_at, updated_at, published_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `, [
+    id,
+    title,
+    description || null,
+    type || 'feature',
+    status || 'draft',
+    created_by,
+    updated_by || created_by,
+    published_by || null,
+    now,
+    now,
+    status === 'published' ? now : null,
+  ]);
+
+  for (const optionText of (options || [])) {
+    const optionId = require('crypto').randomUUID();
+    await db.run(`INSERT INTO poll_options (id, poll_id, option_text, votes) VALUES (?, ?, ?, 0)`, [optionId, id, String(optionText)]);
+  }
+
+  return getPollById(id);
+}
+
+async function updatePoll(id, { title, description, type, status, options, updated_by, published_by }) {
+  const current = await db.get(`SELECT * FROM polls WHERE id = ?`, [id]);
+  if (!current) return null;
+
+  const nextStatus = status || current.status;
+  await db.run(`
+    UPDATE polls
+    SET title = COALESCE(?, title),
+        description = COALESCE(?, description),
+        type = COALESCE(?, type),
+        status = COALESCE(?, status),
+        updated_by = COALESCE(?, updated_by),
+        published_by = CASE
+          WHEN ? = 'published' AND published_by IS NULL THEN ?
+          ELSE published_by
+        END,
+        published_at = CASE
+          WHEN ? = 'published' AND published_at IS NULL THEN datetime('now')
+          ELSE published_at
+        END,
+        archived_at = CASE WHEN ? = 'archived' THEN datetime('now') ELSE archived_at END,
+        updated_at = datetime('now')
+    WHERE id = ?
+  `, [
+    title,
+    description,
+    type,
+    status,
+    updated_by || null,
+    nextStatus,
+    published_by || null,
+    nextStatus,
+    nextStatus,
+    id,
+  ]);
+
+  if (Array.isArray(options) && options.length >= 2) {
+    await db.run(`DELETE FROM poll_options WHERE poll_id = ?`, [id]);
+    for (const optionText of options) {
+      const optionId = require('crypto').randomUUID();
+      await db.run(`INSERT INTO poll_options (id, poll_id, option_text, votes) VALUES (?, ?, ?, 0)`, [optionId, id, String(optionText)]);
+    }
+    await db.run(`DELETE FROM poll_votes WHERE poll_id = ?`, [id]);
+  }
+
+  return getPollById(id);
+}
+
+async function deletePoll(id) {
+  await db.run(`DELETE FROM poll_votes WHERE poll_id = ?`, [id]);
+  await db.run(`DELETE FROM poll_options WHERE poll_id = ?`, [id]);
+  return db.run(`DELETE FROM polls WHERE id = ?`, [id]);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  TASKS
+// ═══════════════════════════════════════════════════════════════════════════════
+async function getTasks({ status, assigned_role, assigned_user_id, limit = 100, offset = 0 } = {}) {
+  const where = [];
+  const params = [];
+  if (status) { where.push('status = ?'); params.push(status); }
+  if (assigned_role) { where.push('assigned_role = ?'); params.push(assigned_role); }
+  if (assigned_user_id) { where.push('assigned_user_id = ?'); params.push(assigned_user_id); }
+  const whereClause = where.length ? `WHERE ${where.join(' AND ')}` : '';
+
+  const tasks = await db.all(`
+    SELECT *
+    FROM admin_tasks
+    ${whereClause}
+    ORDER BY
+      CASE priority WHEN 'urgent' THEN 4 WHEN 'high' THEN 3 WHEN 'normal' THEN 2 ELSE 1 END DESC,
+      updated_at DESC
+    LIMIT ? OFFSET ?
+  `, [...params, limit, offset]);
+
+  const total = await db.get(`SELECT COUNT(*) AS total FROM admin_tasks ${whereClause}`, params);
+  return { tasks: tasks || [], total: total?.total || 0 };
+}
+
+async function getTaskById(id) {
+  const task = await db.get(`SELECT * FROM admin_tasks WHERE id = ?`, [id]);
+  if (!task) return null;
+  const comments = await db.all(`SELECT * FROM admin_task_comments WHERE task_id = ? ORDER BY created_at ASC`, [id]);
+  return { ...task, comments: comments || [] };
+}
+
+async function createTask({
+  id,
+  title,
+  description,
+  priority,
+  status,
+  category,
+  assigned_role,
+  assigned_user_id,
+  requested_by,
+  created_by,
+  due_date,
+}) {
+  await db.run(`
+    INSERT INTO admin_tasks (
+      id, title, description, priority, status, category, assigned_role, assigned_user_id,
+      requested_by, created_by, due_date, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+  `, [
+    id,
+    title,
+    description,
+    priority || 'normal',
+    status || 'requested',
+    category || null,
+    assigned_role || null,
+    assigned_user_id || null,
+    requested_by || null,
+    created_by,
+    due_date || null,
+  ]);
+  return getTaskById(id);
+}
+
+async function updateTask(id, patch = {}) {
+  const current = await db.get(`SELECT * FROM admin_tasks WHERE id = ?`, [id]);
+  if (!current) return null;
+
+  await db.run(`
+    UPDATE admin_tasks
+    SET
+      title = COALESCE(?, title),
+      description = COALESCE(?, description),
+      priority = COALESCE(?, priority),
+      status = COALESCE(?, status),
+      category = COALESCE(?, category),
+      assigned_role = COALESCE(?, assigned_role),
+      assigned_user_id = COALESCE(?, assigned_user_id),
+      approved_by = COALESCE(?, approved_by),
+      due_date = COALESCE(?, due_date),
+      completed_at = CASE WHEN COALESCE(?, status) = 'complete' THEN datetime('now') ELSE completed_at END,
+      updated_at = datetime('now')
+    WHERE id = ?
+  `, [
+    patch.title,
+    patch.description,
+    patch.priority,
+    patch.status,
+    patch.category,
+    patch.assigned_role,
+    patch.assigned_user_id,
+    patch.approved_by,
+    patch.due_date,
+    patch.status,
+    id,
+  ]);
+
+  return getTaskById(id);
+}
+
+async function addTaskComment({ id, task_id, admin_id, admin_email, comment, old_status, new_status }) {
+  await db.run(`
+    INSERT INTO admin_task_comments (id, task_id, admin_id, admin_email, comment, old_status, new_status, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+  `, [id, task_id, admin_id || null, admin_email || null, comment, old_status || null, new_status || null]);
+  return db.get(`SELECT * FROM admin_task_comments WHERE id = ?`, [id]);
+}
+
+async function deleteTask(id) {
+  await db.run(`DELETE FROM admin_task_comments WHERE task_id = ?`, [id]);
+  return db.run(`DELETE FROM admin_tasks WHERE id = ?`, [id]);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -536,9 +941,15 @@ module.exports = {
   // announcements
   getAnnouncements, getAnnouncementById, createAnnouncement, updateAnnouncement, deleteAnnouncement, getNextAnnouncementVersion,
   // accounts
-  getAccounts, getAccountById, updateAccountRole, banAccount, unbanAccount, deleteAccount, resetAccountPassword, getAccountSessions, getAccountDevices,
+  getAccounts, getAccountById, updateAccountRole, setAccountPlan, banAccount, unbanAccount, deleteAccount, resetAccountPassword, getAccountSessions, getAccountDevices,
+  // server accounts
+  upsertServerAccount, searchServerAccounts, getServerAccountById, setServerPremium, setServerBlocked,
   // roles
   getAdminUsers, getAdminById, getRoles, getRolePermissions, setRolePermission, updateAdminRole, deleteAdmin,
+  // polls
+  getPolls, getPollById, createPoll, updatePoll, deletePoll,
+  // tasks
+  getTasks, getTaskById, createTask, updateTask, addTaskComment, deleteTask,
   // app updates
   getAppUpdates, getAppUpdateById, getLatestAppUpdate, getAllLatestUpdates, getAppUpdateHistory, createAppUpdate, deleteAppUpdate,
   // shop

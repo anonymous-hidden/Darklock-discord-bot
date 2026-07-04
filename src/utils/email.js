@@ -1,6 +1,6 @@
 const nodemailer = require('nodemailer');
 
-async function sendEmail({ to, subject, text }) {
+async function sendEmail({ to, subject, text, html = null, from: fromOverride = null }) {
   if (!to) {
     console.log('[Email] Missing recipient; skipping');
     return false;
@@ -10,7 +10,7 @@ async function sendEmail({ to, subject, text }) {
   const host = process.env.EMAIL_HOST || process.env.SMTP_HOST;
   const user = process.env.EMAIL_USER || process.env.SMTP_USER;
   const pass = process.env.EMAIL_PASS || process.env.SMTP_PASS;
-  const from = process.env.EMAIL_FROM || process.env.SMTP_FROM || 'Guardian Bot <no-reply@guardianpro.local>';
+  const from = fromOverride || process.env.EMAIL_FROM || process.env.SMTP_FROM || 'Guardian Bot <no-reply@guardianpro.local>';
   const port = parseInt(process.env.EMAIL_PORT || process.env.SMTP_PORT || '587');
   const secure = process.env.EMAIL_SECURE === 'true' || process.env.SMTP_SECURE === 'true' || port === 465;
 
@@ -22,7 +22,8 @@ async function sendEmail({ to, subject, text }) {
         secure,
         auth: { user, pass }
       });
-      await transporter.sendMail({ from, to, subject, text });
+      const textBody = text || (typeof html === 'string' ? html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() : '');
+      await transporter.sendMail({ from, to, subject, text: textBody, html: html || undefined });
       console.log(`[Email] ✅ Sent to ${to} via ${host}:${port}`);
       return true;
     } catch (error) {

@@ -203,24 +203,6 @@ async function handleSlashCommand(interaction, bot) {
             }
         }
 
-        // Premium tier gating: command.premium = 'pro' | 'enterprise' | true (= 'pro')
-        if (interaction.guild && command.premium) {
-            const required = command.premium === true ? 'pro' : String(command.premium).toLowerCase();
-            const hasPro = await bot.hasProFeatures(interaction.guild.id);
-            if (required === 'pro' && !hasPro) {
-                return await interaction.reply({
-                    content: `🔒 **\`/${interaction.commandName}\` is a Pro command.**\nUpgrade your server plan at https://darklock.net/site/pricing to unlock it.`,
-                    ephemeral: true
-                });
-            }
-            if (required === 'enterprise' && !hasPro) {
-                return await interaction.reply({
-                    content: `🔒 **\`/${interaction.commandName}\` requires an Enterprise-level plan.**\nUpgrade your server plan at https://darklock.net/site/pricing to unlock it.`,
-                    ephemeral: true
-                });
-            }
-        }
-
         // Role-based permission check (before command execution)
         if (bot.permissionManager) {
             const allowed = await bot.permissionManager.isAllowed(interaction);

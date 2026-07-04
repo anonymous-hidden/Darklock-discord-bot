@@ -108,6 +108,15 @@
         .event-item label { font-size: 13px; color: var(--ds-text-secondary); cursor: pointer; flex: 1; }
         .event-item i { font-size: 14px; color: var(--ds-text-muted); width: 18px; text-align: center; flex-shrink: 0; }
 
+        /* Custom log cards */
+        .custom-card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+        .custom-card-item { background: var(--ds-surface-0); border: 1px solid var(--ds-border-light); border-radius: var(--ds-radius-md); padding: 12px; }
+        .custom-card-item h4 { margin: 0 0 10px 0; font-size: 13px; color: var(--ds-text-primary); }
+        .custom-card-fields { display: grid; gap: 8px; }
+        .custom-card-fields .setup-form-input { font-size: 12px; padding: 8px 10px; }
+        .custom-card-color-row { display: flex; align-items: center; gap: 8px; }
+        .custom-card-color-row input[type="color"] { width: 40px; height: 32px; border: 1px solid var(--ds-border); border-radius: var(--ds-radius-sm); background: var(--ds-surface-0); cursor: pointer; padding: 2px; }
+
         /* Channel Tag */
         .channel-tag { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; background: var(--ds-surface-2); border-radius: var(--ds-radius-sm); font-size: 12px; color: var(--ds-text-secondary); }
         .channel-tag i { color: var(--ds-text-muted); font-size: 11px; }
@@ -720,6 +729,79 @@
             </div>
         </div>
 
+        <!-- ═══════════════════════════════════════════ -->
+        <!--  SECTION 10: CUSTOM LOG CARDS (PRO/ENT)   -->
+        <!-- ═══════════════════════════════════════════ -->
+        <div class="setup-card premium-card" id="card-custom-cards" data-premium-feature="advanced-notifications">
+            <div class="setup-card-header">
+                <div class="setup-card-title">
+                    <i class="fas fa-id-card"></i> Custom Moderation Log Cards
+                    <span class="tier-badge tier-premium"><i class="fas fa-crown" style="font-size: 9px;"></i> PRO / ENTERPRISE</span>
+                </div>
+            </div>
+            <div class="setup-card-body">
+                <p class="setup-card-desc">Customize title, icon, and color for moderation logs like bans, kicks, mutes/timeouts, and warnings.</p>
+
+                <div class="toggle-row" style="padding-top: 0;">
+                    <div class="toggle-info">
+                        <h4>Enable Custom Moderation Cards</h4>
+                        <p>When enabled, your custom card styles override the default ban/kick/mute/warn log card formatting.</p>
+                    </div>
+                    <label class="toggle-switch"><input type="checkbox" id="customCardsEnabled"><span class="toggle-slider"></span></label>
+                </div>
+
+                <div class="custom-card-grid" style="margin-top: 14px;">
+                    <div class="custom-card-item">
+                        <h4>Ban Card</h4>
+                        <div class="custom-card-fields">
+                            <input type="text" class="setup-form-input custom-card-input" id="cardBanTitle" placeholder="Title (e.g. Member Banned)" maxlength="80">
+                            <input type="text" class="setup-form-input custom-card-input" id="cardBanIcon" placeholder="Icon (emoji, e.g. 🔨)" maxlength="4">
+                            <div class="custom-card-color-row">
+                                <input type="color" class="custom-card-input" id="cardBanColor" value="#e74c3c">
+                                <input type="text" class="setup-form-input custom-card-input" id="cardBanColorText" value="#e74c3c" maxlength="7">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="custom-card-item">
+                        <h4>Kick Card</h4>
+                        <div class="custom-card-fields">
+                            <input type="text" class="setup-form-input custom-card-input" id="cardKickTitle" placeholder="Title (e.g. Member Kicked)" maxlength="80">
+                            <input type="text" class="setup-form-input custom-card-input" id="cardKickIcon" placeholder="Icon (emoji, e.g. 👢)" maxlength="4">
+                            <div class="custom-card-color-row">
+                                <input type="color" class="custom-card-input" id="cardKickColor" value="#e67e22">
+                                <input type="text" class="setup-form-input custom-card-input" id="cardKickColorText" value="#e67e22" maxlength="7">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="custom-card-item">
+                        <h4>Mute / Timeout Card</h4>
+                        <div class="custom-card-fields">
+                            <input type="text" class="setup-form-input custom-card-input" id="cardMuteTitle" placeholder="Title (e.g. Member Muted)" maxlength="80">
+                            <input type="text" class="setup-form-input custom-card-input" id="cardMuteIcon" placeholder="Icon (emoji, e.g. 🔇)" maxlength="4">
+                            <div class="custom-card-color-row">
+                                <input type="color" class="custom-card-input" id="cardMuteColor" value="#f39c12">
+                                <input type="text" class="setup-form-input custom-card-input" id="cardMuteColorText" value="#f39c12" maxlength="7">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="custom-card-item">
+                        <h4>Warn Card</h4>
+                        <div class="custom-card-fields">
+                            <input type="text" class="setup-form-input custom-card-input" id="cardWarnTitle" placeholder="Title (e.g. Member Warned)" maxlength="80">
+                            <input type="text" class="setup-form-input custom-card-input" id="cardWarnIcon" placeholder="Icon (emoji, e.g. ⚠️)" maxlength="4">
+                            <div class="custom-card-color-row">
+                                <input type="color" class="custom-card-input" id="cardWarnColor" value="#f1c40f">
+                                <input type="text" class="setup-form-input custom-card-input" id="cardWarnColorText" value="#f1c40f" maxlength="7">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Save Bar -->
         <div class="save-section" id="saveBar">
             <span class="save-hint" id="saveHint">Configure your notification preferences above</span>
@@ -741,13 +823,56 @@
     (function() {
         'use strict';
 
-        const guildId = localStorage.getItem('selectedGuildId');
+        let guildId = null;
         let channels = [];
         let isPremium = false;
         let hasChanges = false;
 
+        function isValidSnowflake(id) {
+            return /^\d{17,20}$/.test(String(id || '').trim());
+        }
+
+        async function ensureGuildId() {
+            if (isValidSnowflake(guildId)) return guildId;
+
+            const qp = new URLSearchParams(window.location.search).get('guildId');
+            const candidates = [
+                localStorage.getItem('selectedGuildId'),
+                localStorage.getItem('selectedGuild'),
+                qp
+            ];
+            for (const c of candidates) {
+                if (isValidSnowflake(c)) {
+                    guildId = String(c).trim();
+                    localStorage.setItem('selectedGuildId', guildId);
+                    return guildId;
+                }
+            }
+
+            try {
+                const meRes = await SecureAuth.fetch('/api/me', { method: 'GET' });
+                if (meRes.ok) {
+                    const me = await meRes.json().catch(() => ({}));
+                    const candidate = me?.user?.currentGuildId || me?.user?.accessGuild || me?.user?.guildId;
+                    if (isValidSnowflake(candidate)) {
+                        guildId = String(candidate).trim();
+                        localStorage.setItem('selectedGuildId', guildId);
+                        return guildId;
+                    }
+                }
+            } catch (_) { /* ignore */ }
+
+            return null;
+        }
+
         document.addEventListener('DOMContentLoaded', async () => {
             await SecureAuth.init();
+            const resolvedGuild = await ensureGuildId();
+            if (!resolvedGuild) {
+                showToast('error', 'No server selected. Please choose a server in Dashboard first.');
+                updateStatus(false);
+                return;
+            }
             await checkPremium();
             await loadChannels();
             await loadSettings();
@@ -783,7 +908,9 @@
         // ── Load Channels ─────────────────────────────
         async function loadChannels() {
             try {
-                const res = await SecureAuth.fetch(`/api/guild/${guildId}/channels`, { method: 'GET' });
+                const gid = await ensureGuildId();
+                if (!gid) return;
+                const res = await SecureAuth.fetch(`/api/guild/${gid}/channels`, { method: 'GET' });
                 if (!res.ok) return;
                 const data = await res.json();
                 channels = (Array.isArray(data) ? data : (data.channels || [])).filter(c => c.type === 'GUILD_TEXT' || c.type === 0);
@@ -816,7 +943,12 @@
         // ── Load Settings ─────────────────────────────
         async function loadSettings() {
             try {
-                const res = await SecureAuth.fetch(`/api/settings/notifications?guildId=${guildId}`, { method: 'GET' });
+                const gid = await ensureGuildId();
+                if (!gid) {
+                    showToast('error', 'No server selected.');
+                    return;
+                }
+                const res = await SecureAuth.fetch(`/api/settings/notifications?guildId=${gid}`, { method: 'GET' });
                 if (!res.ok) {
                     showToast('error', 'Failed to load notification settings');
                     return;
@@ -907,6 +1039,35 @@
                 setChecked('logShowAvatars', s.log_show_avatars !== false);
                 setChecked('logShowContent', s.log_show_content !== false);
 
+                // Premium: Custom moderation log cards
+                const customCards = s.custom_log_cards || {};
+                const banCard = customCards.ban || {};
+                const kickCard = customCards.kick || {};
+                const muteCard = customCards.timeout || {};
+                const warnCard = customCards.warn || {};
+
+                setChecked('customCardsEnabled', !!customCards.enabled);
+                setValue('cardBanTitle', banCard.title || '');
+                setValue('cardBanIcon', banCard.icon || '🔨');
+                setValue('cardBanColor', banCard.color || '#e74c3c');
+                setValue('cardBanColorText', banCard.color || '#e74c3c');
+
+                setValue('cardKickTitle', kickCard.title || '');
+                setValue('cardKickIcon', kickCard.icon || '👢');
+                setValue('cardKickColor', kickCard.color || '#e67e22');
+                setValue('cardKickColorText', kickCard.color || '#e67e22');
+
+                setValue('cardMuteTitle', muteCard.title || '');
+                setValue('cardMuteIcon', muteCard.icon || '🔇');
+                setValue('cardMuteColor', muteCard.color || '#f39c12');
+                setValue('cardMuteColorText', muteCard.color || '#f39c12');
+
+                setValue('cardWarnTitle', warnCard.title || '');
+                setValue('cardWarnIcon', warnCard.icon || '⚠️');
+                setValue('cardWarnColor', warnCard.color || '#f1c40f');
+                setValue('cardWarnColorText', warnCard.color || '#f1c40f');
+                updateCustomCardsState();
+
                 // Update status indicator
                 const loggingActive = !!(s.log_channel_id || s.mod_log_channel || s.alert_channel);
                 updateStatus(loggingActive);
@@ -926,6 +1087,11 @@
             btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
 
             try {
+                const gid = await ensureGuildId();
+                if (!gid) {
+                    showToast('error', 'No server selected.');
+                    return;
+                }
                 const settings = {
                     // Free: Channels
                     log_channel_id: getVal('logChannel'),
@@ -994,10 +1160,35 @@
                     timestamp_format: getVal('timestampFormat'),
                     audit_retention: parseInt(getVal('auditRetention')) || 30,
                     log_show_avatars: isChecked('logShowAvatars'),
-                    log_show_content: isChecked('logShowContent')
+                    log_show_content: isChecked('logShowContent'),
+
+                    // Premium: Custom moderation log cards (Pro/Enterprise)
+                    custom_log_cards: {
+                        enabled: isChecked('customCardsEnabled'),
+                        ban: {
+                            title: getVal('cardBanTitle'),
+                            icon: getVal('cardBanIcon'),
+                            color: getVal('cardBanColorText') || getVal('cardBanColor')
+                        },
+                        kick: {
+                            title: getVal('cardKickTitle'),
+                            icon: getVal('cardKickIcon'),
+                            color: getVal('cardKickColorText') || getVal('cardKickColor')
+                        },
+                        timeout: {
+                            title: getVal('cardMuteTitle'),
+                            icon: getVal('cardMuteIcon'),
+                            color: getVal('cardMuteColorText') || getVal('cardMuteColor')
+                        },
+                        warn: {
+                            title: getVal('cardWarnTitle'),
+                            icon: getVal('cardWarnIcon'),
+                            color: getVal('cardWarnColorText') || getVal('cardWarnColor')
+                        }
+                    }
                 };
 
-                const res = await SecureAuth.fetch(`/api/settings/notifications?guildId=${guildId}`, {
+                const res = await SecureAuth.fetch(`/api/settings/notifications?guildId=${gid}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(settings)
@@ -1030,10 +1221,15 @@
                 return;
             }
             try {
+                const gid = await ensureGuildId();
+                if (!gid) {
+                    showToast('error', 'No server selected.');
+                    return;
+                }
                 const res = await SecureAuth.fetch('/api/settings/notifications/verify-email', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ email, guildId })
+                    body: JSON.stringify({ email, guildId: gid })
                 });
                 if (res.ok) {
                     showToast('success', 'Verification email sent! Check your inbox.');
@@ -1083,6 +1279,13 @@
             }
         };
 
+        function updateCustomCardsState() {
+            const enabled = isChecked('customCardsEnabled');
+            document.querySelectorAll('.custom-card-input').forEach(el => {
+                el.disabled = !enabled;
+            });
+        }
+
         // ── Helpers ───────────────────────────────────
         function setValue(id, val) { const el = document.getElementById(id); if (el) el.value = val; }
         function getVal(id) { const el = document.getElementById(id); return el ? el.value : ''; }
@@ -1126,6 +1329,19 @@
         document.getElementById('logEmbedColor')?.addEventListener('input', function() {
             document.getElementById('logEmbedColorText').value = this.value;
         });
+
+        // Sync custom card color pickers and text inputs
+        [['cardBanColor', 'cardBanColorText'], ['cardKickColor', 'cardKickColorText'], ['cardMuteColor', 'cardMuteColorText'], ['cardWarnColor', 'cardWarnColorText']]
+            .forEach(([pickerId, textId]) => {
+                const picker = document.getElementById(pickerId);
+                const text = document.getElementById(textId);
+                picker?.addEventListener('input', function() { if (text) text.value = this.value; });
+                text?.addEventListener('input', function() {
+                    if (picker && /^#[0-9a-fA-F]{6}$/.test(this.value)) picker.value = this.value;
+                });
+            });
+
+        document.getElementById('customCardsEnabled')?.addEventListener('change', updateCustomCardsState);
     })();
     </script>
 </body>

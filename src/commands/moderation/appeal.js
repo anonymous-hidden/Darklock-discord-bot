@@ -4,7 +4,10 @@ module.exports = {
     data: new SlashCommandBuilder()
         .setName('appeal')
         .setDescription('Ban appeal system commands')
-        .setDefaultMemberPermissions(PermissionFlagsBits.BanMembers)
+        .addSubcommand(sub =>
+            sub.setName('ticket')
+                .setDescription('Submit an appeal ticket for this server')
+        )
         .addSubcommand(sub =>
             sub.setName('setup')
                 .setDescription('Setup the appeal system')
@@ -98,12 +101,30 @@ module.exports = {
         ),
 
     async execute(interaction) {
+        if (!interaction.guild) {
+            return interaction.reply({
+                content: '❌ This command can only be used in a server.',
+                ephemeral: true
+            });
+        }
+
         const subcommand = interaction.options.getSubcommand();
         const appeals = interaction.client.appealSystem;
 
         if (!appeals) {
             return interaction.reply({
                 content: '❌ Appeal system is not available.',
+                ephemeral: true
+            });
+        }
+
+        if (subcommand === 'ticket') {
+            return this.openAppealTicketModal(interaction, appeals);
+        }
+
+        if (!this.hasAppealStaffPermission(interaction)) {
+            return interaction.reply({
+                content: '❌ You need Ban Members permission to manage the appeal system.',
                 ephemeral: true
             });
         }
@@ -124,6 +145,55 @@ module.exports = {
             case 'config':
                 return this.viewConfig(interaction, appeals);
         }
+    },
+
+    hasAppealStaffPermission(interaction) {
+        return Boolean(
+            interaction.member?.permissions?.has(PermissionFlagsBits.BanMembers) ||
+            interaction.member?.permissions?.has(PermissionFlagsBits.Administrator)
+        );
+    },
+
+    async openAppealTicketModal(interaction, appeals) {
+        const config = await appeals.getConfig(interaction.guild.id);
+        if (!config?.enabled) {
+            return interaction.reply({
+                content: '❌ Appeal system is not enabled in this server. Ask staff to run /appeal setup first.',
+                ephemeral: true
+            });
+        }
+
+        const { allowed, reason } = await appeals.canSubmitAppeal(interaction.guild.id, interaction.user.id);
+        if (!allowed) {
+            return interaction.reply({ content: `❌ ${reason}`, ephemeral: true });
+        }
+
+        const modal = new ModalBuilder()
+            .setCustomId(`appeal_modal_${interaction.guild.id}`)
+            .setTitle('Ban Appeal Ticket');
+
+        const reasonInput = new TextInputBuilder()
+            .setCustomId('appeal_reason')
+            .setLabel('Why should this appeal be approved?')
+            .setStyle(TextInputStyle.Paragraph)
+            .setPlaceholder('Explain the situation and why the ban should be removed...')
+            .setRequired(true)
+            .setMaxLength(1000);
+
+        const additionalInput = new TextInputBuilder()
+            .setCustomId('additional_info')
+            .setLabel('Additional information (optional)')
+            .setStyle(TextInputStyle.Paragraph)
+            .setPlaceholder('Any extra context, references, or evidence...')
+            .setRequired(false)
+            .setMaxLength(500);
+
+        modal.addComponents(
+            new ActionRowBuilder().addComponents(reasonInput),
+            new ActionRowBuilder().addComponents(additionalInput)
+        );
+
+        return interaction.showModal(modal);
     },
 
     async setup(interaction, appeals) {
@@ -147,7 +217,12 @@ module.exports = {
                 { name: 'Cooldown', value: `${cooldown} hours`, inline: true },
                 { name: 'Auto DM', value: autoDm ? 'Yes' : 'No', inline: true }
             )
-            .setDescription(appealUrl ? `Appeal URL: ${appealUrl}` : 'Users can appeal by clicking the button in their ban DM.')
+            .setDescription(
+                [
+                    appealUrl ? `Appeal URL: ${appealUrl}` : null,
+                    'Users can submit appeals via /appeal ticket, or from the ban DM button if auto-DM is enabled.'
+                ].filter(Boolean).join('\n')
+            )
             .setTimestamp();
 
         await interaction.reply({ embeds: [embed] });

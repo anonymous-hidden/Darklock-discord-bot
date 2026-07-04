@@ -3,11 +3,16 @@
  * Captures all bot actions, dashboard changes, and security events
  */
 
+const { sendEmail } = require('./email');
+
 class Logger {
     constructor(bot) {
         this.bot = bot;
         this.db = bot.database;
         this.dashboard = null; // Set later by dashboard
+        this._notifCache = new Map(); // guildId -> { notif, expire }
+        this.NOTIF_CACHE_TTL_MS = 30 * 1000;
+        this._fetchImpl = null;
     }
 
     /**
@@ -72,6 +77,194 @@ class Logger {
      */
     setDashboard(dashboard) {
         this.dashboard = dashboard;
+    }
+
+    _safeParseJson(value) {
+        if (!value) return {};
+        if (typeof value === 'object') return value;
+        try { return JSON.parse(value); } catch { return {}; }
+    }
+
+    async _getGuildNotificationContext(guildId) {
+        if (!guildId) return { notif: {}, config: null };
+        const key = String(guildId);
+        const cached = this._notifCache.get(key);
+        if (cached && Date.now() < cached.expire) return cached;
+
+        let config = null;
+        try {
+            config = await this.db.get('SELECT notification_settings, log_channel_id, mod_log_channel, alert_channel FROM guild_configs WHERE guild_id = ?', [key]);
+        } catch (_) {
+            config = null;
+        }
+
+        const notif = this._safeParseJson(config?.notification_settings);
+        const payload = { notif, config: config || null, expire: Date.now() + this.NOTIF_CACHE_TTL_MS };
+        this._notifCache.set(key, payload);
+        return payload;
+    }
+
+    invalidateNotificationCache(guildId) {
+        if (!guildId) return;
+        this._notifCache.delete(String(guildId));
+    }
+
+    _isDiscordWebhookUrl(url) {
+        if (!url || typeof url !== 'string') return false;
+        try {
+            const u = new URL(url);
+            if (u.protocol !== 'https:') return false;
+            if (!(u.hostname === 'discord.com' || u.hostname === 'canary.discord.com' || u.hostname === 'ptb.discord.com')) return false;
+            return /^\/api\/webhooks\/\d+\/.+/.test(u.pathname);
+        } catch {
+            return false;
+        }
+    }
+
+    async _getFetch() {
+        if (this._fetchImpl) return this._fetchImpl;
+        if (typeof fetch === 'function') {
+            this._fetchImpl = fetch;
+            return this._fetchImpl;
+        }
+        try {
+            const mod = await import('node-fetch');
+            this._fetchImpl = mod.default || mod;
+            return this._fetchImpl;
+        } catch {
+            return null;
+        }
+    }
+
+    async _postDiscordWebhook(url, embed) {
+        const f = await this._getFetch();
+        if (!f || !this._isDiscordWebhookUrl(url)) return false;
+
+        const controller = new AbortController();
+        const timeoutHandle = setTimeout(() => {
+            try { controller.abort(); } catch (_) {}
+        }, 3500);
+
+        try {
+            const res = await f(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ embeds: [embed] }),
+                signal: controller.signal
+            });
+            return res.ok || res.status === 204;
+        } catch (e) {
+            if (e?.name !== 'AbortError') {
+                console.warn('[Logger] Webhook send failed:', e?.message || e);
+            }
+            return false;
+        } finally {
+            clearTimeout(timeoutHandle);
+        }
+    }
+
+    _emailToggleForSecurityEvent(eventType) {
+        const t = String(eventType || '').toLowerCase();
+        if (/(raid|mass_join)/.test(t)) return 'email_on_raid';
+        if (/(nuke|lockdown|mass_delete)/.test(t)) return 'email_on_nuke';
+        if (/(mass[_-]?(ban|kick)|ban_wave|kick_wave)/.test(t)) return 'email_on_mass_ban';
+        if (/(phish|scam|malicious_link)/.test(t)) return 'email_on_phishing';
+        if (/(suspicious|alt|new_account)/.test(t)) return 'email_on_suspicious';
+        if (/(ticket.*escalat|escalat.*ticket)/.test(t)) return 'email_on_ticket_escalation';
+        if (/(staff_removed|admin_removed|staff_demoted)/.test(t)) return 'email_on_staff_removed';
+        return null;
+    }
+
+    async _sendConfiguredAlerts({ sourceType, guildId, eventType, moderatorTag, targetTag, reason, details, adminTag, beforeData, afterData }) {
+        if (!guildId) return;
+
+        const gid = String(guildId);
+        const { notif } = await this._getGuildNotificationContext(gid);
+        if (!notif || typeof notif !== 'object') return;
+
+        const guildName = this.bot?.client?.guilds?.cache?.get(gid)?.name || gid;
+        const safeEvent = String(eventType || 'event').slice(0, 120);
+
+        // Dashboard alerts are only relevant for configuration-change type events.
+        if (sourceType === 'dashboard' && !/(setting|config|notification|webhook|email|log)/i.test(safeEvent)) {
+            return;
+        }
+
+        // Webhook delivery
+        const primaryWebhook = this._isDiscordWebhookUrl(notif.webhook_primary) ? notif.webhook_primary : '';
+        const secondaryWebhook = this._isDiscordWebhookUrl(notif.webhook_secondary) ? notif.webhook_secondary : '';
+        const allowSecurityWebhook = sourceType !== 'security' || notif.notify_security_alerts !== false;
+        const allowDashboardWebhook = sourceType !== 'dashboard' || notif.notify_settings_changes !== false;
+
+        if ((primaryWebhook || secondaryWebhook) && allowSecurityWebhook && allowDashboardWebhook) {
+            const embed = {
+                title: sourceType === 'security' ? `DarkLock Security Alert: ${safeEvent}` : `DarkLock Settings Update: ${safeEvent}`,
+                description: reason ? String(reason).slice(0, 1000) : (sourceType === 'security' ? 'A security event was logged.' : 'A dashboard configuration update was logged.'),
+                color: sourceType === 'security' ? 0xEF4444 : 0x5865F2,
+                fields: [
+                    { name: 'Server', value: String(guildName).slice(0, 256), inline: true },
+                    { name: 'Type', value: safeEvent.slice(0, 256), inline: true }
+                ],
+                footer: { text: 'DarkLock Notification Integration' },
+                timestamp: new Date().toISOString()
+            };
+
+            if (moderatorTag) embed.fields.push({ name: 'Actor', value: String(moderatorTag).slice(0, 256), inline: true });
+            if (adminTag && !moderatorTag) embed.fields.push({ name: 'Admin', value: String(adminTag).slice(0, 256), inline: true });
+            if (targetTag) embed.fields.push({ name: 'Target', value: String(targetTag).slice(0, 256), inline: true });
+
+            if (details && typeof details === 'object' && Object.keys(details).length) {
+                embed.fields.push({ name: 'Details', value: `\`\`\`${JSON.stringify(details).slice(0, 900)}\`\`\`` });
+            } else if (sourceType === 'dashboard' && (beforeData || afterData)) {
+                embed.fields.push({
+                    name: 'Change',
+                    value: `before: \`${JSON.stringify(beforeData || {}).slice(0, 220)}\`\nafter: \`${JSON.stringify(afterData || {}).slice(0, 220)}\``
+                });
+            }
+
+            await this._postDiscordWebhook(primaryWebhook, embed);
+
+            const isModerationLike = /(ban|kick|warn|timeout|unban|purge|moderation)/i.test(safeEvent);
+            if (secondaryWebhook && (sourceType !== 'security' || isModerationLike)) {
+                await this._postDiscordWebhook(secondaryWebhook, embed);
+            }
+        }
+
+        // Email delivery
+        const hasVerifiedEmail = !!notif.email_verified && typeof notif.email_address === 'string' && notif.email_address.includes('@');
+        if (!hasVerifiedEmail) return;
+
+        if (sourceType === 'dashboard') {
+            if (!notif.email_on_settings_change) return;
+        } else if (sourceType === 'security') {
+            const toggleKey = this._emailToggleForSecurityEvent(safeEvent);
+            if (!toggleKey || notif[toggleKey] === false) return;
+        } else {
+            return;
+        }
+
+        const lines = [
+            `Server: ${guildName}`,
+            `Event: ${safeEvent}`,
+            sourceType === 'security'
+                ? `Actor: ${moderatorTag || 'system'}`
+                : `Admin: ${adminTag || 'unknown'}`,
+            targetTag ? `Target: ${targetTag}` : null,
+            reason ? `Reason: ${String(reason).slice(0, 500)}` : null,
+            details && Object.keys(details || {}).length ? `Details: ${JSON.stringify(details).slice(0, 900)}` : null,
+            sourceType === 'dashboard' && beforeData ? `Before: ${JSON.stringify(beforeData).slice(0, 320)}` : null,
+            sourceType === 'dashboard' && afterData ? `After: ${JSON.stringify(afterData).slice(0, 320)}` : null,
+            `Time: ${new Date().toISOString()}`
+        ].filter(Boolean);
+
+        await sendEmail({
+            to: notif.email_address,
+            subject: sourceType === 'security'
+                ? `[DarkLock] Security Alert: ${safeEvent}`
+                : `[DarkLock] Settings Change: ${safeEvent}`,
+            text: lines.join('\n'),
+            from: process.env.EMAIL_FROM || 'DarkLock Alerts <alerts@darklock.net>'
+        });
     }
 
     /**
@@ -228,6 +421,15 @@ class Logger {
                 const msg = `[DASHBOARD] ${adminTag} changed ${eventType} in ${guildId}`;
                 this._addToConsoleBuffer(guildId, msg);
             }
+
+            this._sendConfiguredAlerts({
+                sourceType: 'dashboard',
+                guildId,
+                eventType,
+                adminTag,
+                beforeData,
+                afterData
+            }).catch(() => {});
         } catch (err) {
             console.error('[Logger] Failed to log dashboard action:', err);
         }
@@ -284,6 +486,16 @@ class Logger {
                 const msg = `[SECURITY] ${eventType}: ${targetTag || 'unknown'} by ${moderatorTag || 'system'} in ${guildId}`;
                 this._addToConsoleBuffer(guildId, msg);
             }
+
+            this._sendConfiguredAlerts({
+                sourceType: 'security',
+                guildId,
+                eventType,
+                moderatorTag,
+                targetTag,
+                reason,
+                details
+            }).catch(() => {});
         } catch (err) {
             console.error('[Logger] Failed to log security event:', err);
         }

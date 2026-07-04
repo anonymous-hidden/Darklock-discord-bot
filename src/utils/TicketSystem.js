@@ -6,9 +6,25 @@ const {
     EmbedBuilder,
     ModalBuilder,
     PermissionFlagsBits,
+    StringSelectMenuBuilder,
     TextInputBuilder,
     TextInputStyle
 } = require('discord.js');
+
+const TICKET_CATEGORY_OPTIONS = [
+    { value: 'general', label: 'General Support', emoji: '💬', description: 'Questions and general help' },
+    { value: 'technical', label: 'Technical Issue', emoji: '🛠️', description: 'Bugs, errors, and technical problems' },
+    { value: 'billing', label: 'Billing', emoji: '💳', description: 'Payments, subscriptions, and invoices' },
+    { value: 'report', label: 'Report', emoji: '🚨', description: 'Report abuse, spam, or policy issues' },
+    { value: 'other', label: 'Other', emoji: '🧩', description: 'Something else not listed above' }
+];
+
+const TICKET_PRIORITY_OPTIONS = [
+    { value: 'low', label: 'Low', emoji: '🟢', description: 'Non-urgent request' },
+    { value: 'normal', label: 'Normal', emoji: '🟡', description: 'Standard priority' },
+    { value: 'high', label: 'High', emoji: '🟠', description: 'Needs quick attention' },
+    { value: 'urgent', label: 'Urgent', emoji: '🔴', description: 'Critical issue' }
+];
 
 class TicketSystem {
     constructor(bot) {
@@ -16,6 +32,116 @@ class TicketSystem {
         // Cache configs to prevent database lookup failures
         this.configCache = new Map();
         this.cacheTimeout = 5 * 60 * 1000; // 5 minutes
+        this.ticketDrafts = new Map(); // `${guildId}:${userId}` -> { category, priority, updatedAt }
+        this.draftTtlMs = 10 * 60 * 1000;
+    }
+
+    getDraftKey(guildId, userId) {
+        return `${guildId}:${userId}`;
+    }
+
+    getDraft(guildId, userId) {
+        const key = this.getDraftKey(guildId, userId);
+        const draft = this.ticketDrafts.get(key);
+        if (!draft) return { category: 'general', priority: 'normal' };
+
+        if ((Date.now() - draft.updatedAt) > this.draftTtlMs) {
+            this.ticketDrafts.delete(key);
+            return { category: 'general', priority: 'normal' };
+        }
+
+        return draft;
+    }
+
+    setDraft(guildId, userId, patch = {}) {
+        const current = this.getDraft(guildId, userId);
+        const key = this.getDraftKey(guildId, userId);
+        const next = {
+            category: patch.category || current.category || 'general',
+            priority: patch.priority || current.priority || 'normal',
+            updatedAt: Date.now()
+        };
+        this.ticketDrafts.set(key, next);
+        return next;
+    }
+
+    clearDraft(guildId, userId) {
+        this.ticketDrafts.delete(this.getDraftKey(guildId, userId));
+    }
+
+    cleanupDrafts() {
+        const cutoff = Date.now() - this.draftTtlMs;
+        for (const [key, draft] of this.ticketDrafts.entries()) {
+            if (!draft?.updatedAt || draft.updatedAt < cutoff) {
+                this.ticketDrafts.delete(key);
+            }
+        }
+    }
+
+    getCategoryLabel(categoryValue) {
+        const match = TICKET_CATEGORY_OPTIONS.find(opt => opt.value === categoryValue);
+        return match ? `${match.emoji} ${match.label}` : '💬 General Support';
+    }
+
+    getPriorityLabel(priorityValue) {
+        const match = TICKET_PRIORITY_OPTIONS.find(opt => opt.value === priorityValue);
+        return match ? `${match.emoji} ${match.label}` : '🟡 Normal';
+    }
+
+    buildCreatePrompt(draft) {
+        const categoryMenu = new StringSelectMenuBuilder()
+            .setCustomId('ticket_create_category_select')
+            .setPlaceholder('Select ticket category')
+            .setMinValues(1)
+            .setMaxValues(1)
+            .addOptions(
+                TICKET_CATEGORY_OPTIONS.map(opt => ({
+                    label: opt.label,
+                    description: opt.description,
+                    value: opt.value,
+                    emoji: opt.emoji,
+                    default: opt.value === draft.category
+                }))
+            );
+
+        const priorityMenu = new StringSelectMenuBuilder()
+            .setCustomId('ticket_create_priority_select')
+            .setPlaceholder('Select ticket priority')
+            .setMinValues(1)
+            .setMaxValues(1)
+            .addOptions(
+                TICKET_PRIORITY_OPTIONS.map(opt => ({
+                    label: opt.label,
+                    description: opt.description,
+                    value: opt.value,
+                    emoji: opt.emoji,
+                    default: opt.value === draft.priority
+                }))
+            );
+
+        const embed = new EmbedBuilder()
+            .setTitle('📝 Ticket Setup')
+            .setDescription('Choose a category and priority, then continue to the ticket form.')
+            .addFields(
+                { name: 'Category', value: this.getCategoryLabel(draft.category), inline: true },
+                { name: 'Priority', value: this.getPriorityLabel(draft.priority), inline: true }
+            )
+            .setColor('#00d4ff');
+
+        const continueButton = new ButtonBuilder()
+            .setCustomId('ticket_create_open_modal')
+            .setLabel('Continue to Ticket Form')
+            .setStyle(ButtonStyle.Primary)
+            .setEmoji('➡️');
+
+        return {
+            embeds: [embed],
+            components: [
+                new ActionRowBuilder().addComponents(categoryMenu),
+                new ActionRowBuilder().addComponents(priorityMenu),
+                new ActionRowBuilder().addComponents(continueButton)
+            ]
+        };
     }
 
     // ------- Setup -------
@@ -148,6 +274,41 @@ class TicketSystem {
             }
         } catch (_) { /* table may not exist yet */ }
 
+        const draft = this.setDraft(interaction.guild.id, interaction.user.id, {
+            category: 'general',
+            priority: 'normal'
+        });
+
+        this.cleanupDrafts();
+        return interaction.reply({
+            ...this.buildCreatePrompt(draft),
+            ephemeral: true
+        });
+    }
+
+    async handleCreateSelection(interaction) {
+        if (!interaction.isStringSelectMenu()) return;
+
+        if (interaction.customId !== 'ticket_create_category_select' && interaction.customId !== 'ticket_create_priority_select') {
+            return;
+        }
+
+        const selected = interaction.values?.[0];
+        if (!selected) {
+            return interaction.reply({ content: '❌ Invalid selection.', ephemeral: true });
+        }
+
+        const patch = interaction.customId === 'ticket_create_category_select'
+            ? { category: selected }
+            : { priority: selected };
+
+        const draft = this.setDraft(interaction.guild.id, interaction.user.id, patch);
+        return interaction.update(this.buildCreatePrompt(draft));
+    }
+
+    async handleCreateContinue(interaction) {
+        const draft = this.getDraft(interaction.guild.id, interaction.user.id);
+
         const modal = new ModalBuilder()
             .setCustomId('ticket_create_modal')
             .setTitle('Create a Support Ticket');
@@ -157,18 +318,29 @@ class TicketSystem {
             .setLabel('Problem Title')
             .setStyle(TextInputStyle.Short)
             .setRequired(true)
-            .setMaxLength(100);
+            .setMaxLength(100)
+            .setPlaceholder('Short summary of your issue');
 
         const descriptionInput = new TextInputBuilder()
             .setCustomId('ticket_desc')
             .setLabel('Description')
             .setStyle(TextInputStyle.Paragraph)
             .setRequired(true)
-            .setMaxLength(1200);
+            .setMaxLength(1200)
+            .setPlaceholder('Explain your issue in detail');
+
+        const detailsInput = new TextInputBuilder()
+            .setCustomId('ticket_details')
+            .setLabel('Additional Details (optional)')
+            .setStyle(TextInputStyle.Paragraph)
+            .setRequired(false)
+            .setMaxLength(600)
+            .setPlaceholder(`Category: ${this.getCategoryLabel(draft.category)} | Priority: ${this.getPriorityLabel(draft.priority)}`);
 
         modal.addComponents(
             new ActionRowBuilder().addComponents(titleInput),
-            new ActionRowBuilder().addComponents(descriptionInput)
+            new ActionRowBuilder().addComponents(descriptionInput),
+            new ActionRowBuilder().addComponents(detailsInput)
         );
 
         return interaction.showModal(modal);
@@ -252,6 +424,13 @@ class TicketSystem {
 
         const title = interaction.fields.getTextInputValue('ticket_title').trim();
         const description = interaction.fields.getTextInputValue('ticket_desc').trim();
+        const additionalDetails = interaction.fields.fields.has('ticket_details')
+            ? interaction.fields.getTextInputValue('ticket_details').trim()
+            : '';
+        const draft = this.getDraft(interaction.guild.id, interaction.user.id);
+        const category = draft.category || 'general';
+        const priority = draft.priority || 'normal';
+
         const ticketId = await this.getNextTicketId(interaction.guild.id);
 
         const channel = await this.createTicketChannel({
@@ -259,6 +438,9 @@ class TicketSystem {
             ticketId,
             subject: title,
             description,
+            additionalDetails,
+            category,
+            priority,
             config
         });
 
@@ -280,15 +462,24 @@ class TicketSystem {
             status: 'open',
             title,
             description,
+            category,
+            priority,
             timestamp: new Date().toISOString()
         });
+
+        this.clearDraft(interaction.guild.id, interaction.user.id);
     }
 
-    async createTicketChannel({ interaction, ticketId, subject, description, config }) {
+    async createTicketChannel({ interaction, ticketId, subject, description, additionalDetails, category, priority, config }) {
         const guild = interaction.guild;
         const requester = interaction.user;
         const cleanUser = requester.username.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 16) || 'user';
         const channelName = `ticket-${ticketId}-${cleanUser}`;
+        const categoryLabel = this.getCategoryLabel(category);
+        const priorityLabel = this.getPriorityLabel(priority);
+        const fullDescription = additionalDetails
+            ? `${description}\n\nAdditional Details:\n${additionalDetails}`
+            : description;
 
         const overwrites = [
             { id: guild.roles.everyone, deny: [PermissionFlagsBits.ViewChannel] },
@@ -330,7 +521,7 @@ class TicketSystem {
                     name: channelName.slice(0, 90),
                     type: ChannelType.GuildText,
                     parent: resolvedParent,
-                    topic: `Ticket #${ticketId} | ${requester.username ?? requester.username}`,
+                    topic: `Ticket #${ticketId} | ${category} | ${priority} | ${requester.username ?? requester.username}`,
                     permissionOverwrites: overwrites
                 });
             } catch (permErr) {
@@ -341,7 +532,7 @@ class TicketSystem {
                         name: channelName.slice(0, 90),
                         type: ChannelType.GuildText,
                         parent: resolvedParent,
-                        topic: `Ticket #${ticketId} | ${requester.username ?? requester.username}`,
+                        topic: `Ticket #${ticketId} | ${category} | ${priority} | ${requester.username ?? requester.username}`,
                         permissionOverwrites: minimalOverwrites
                     });
                     // Try to add role overwrites individually after channel creation
@@ -365,15 +556,15 @@ class TicketSystem {
             }
 
             await this.bot.database.run(
-                `INSERT INTO active_tickets (guild_id, channel_id, user_id, ticket_id, subject, description, status, created_at, last_message_at)
-                 VALUES (?, ?, ?, ?, ?, ?, 'open', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
-                [guild.id, channel.id, requester.id, ticketId, subject, description]
+                `INSERT INTO active_tickets (guild_id, channel_id, user_id, ticket_id, subject, description, category, priority, status, created_at, last_message_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'open', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+                [guild.id, channel.id, requester.id, ticketId, subject, fullDescription, category, priority]
             );
 
             await this.bot.database.run(
-                `INSERT OR IGNORE INTO tickets (guild_id, channel_id, user_id, ticket_id, subject, description, status, created_at, last_message_at)
-                 VALUES (?, ?, ?, ?, ?, ?, 'open', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
-                [guild.id, channel.id, requester.id, ticketId, subject, description]
+                `INSERT OR IGNORE INTO tickets (guild_id, channel_id, user_id, ticket_id, subject, description, category, priority, status, created_at, last_message_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'open', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+                [guild.id, channel.id, requester.id, ticketId, subject, fullDescription, category, priority]
             );
 
             const embed = new EmbedBuilder()
@@ -381,10 +572,12 @@ class TicketSystem {
                 .setDescription([
                     `User: ${requester}`,
                     `Ticket ID: ${ticketId}`,
+                    `Category: ${categoryLabel}`,
+                    `Priority: ${priorityLabel}`,
                     '',
                     `Problem: ${subject}`,
                     `Description:`,
-                    description
+                    fullDescription
                 ].join('\n'))
                 .setColor('#00d4ff')
                 .setTimestamp();

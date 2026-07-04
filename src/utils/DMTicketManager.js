@@ -284,11 +284,11 @@ You can also:
             }
 
             case 'category': {
-                const validCategories = ['general', 'technical', 'account', 'report', 'appeal'];
+                const validCategories = ['general', 'technical', 'account', 'report'];
                 const category = content.toLowerCase();
                 
                 if (!validCategories.includes(category)) {
-                    return await message.reply('❌ Invalid category. Please choose: general, technical, account, report, or appeal');
+                    return await message.reply('❌ Invalid category. Please choose: general, technical, account, or report');
                 }
 
                 pending.category = category;
@@ -370,7 +370,7 @@ To close this ticket, type: **close ticket**
     async askCategory(message) {
         const embed = new EmbedBuilder()
             .setTitle('🎫 Select Ticket Category')
-            .setDescription('Please reply with one of the following categories:\n\n**general** - General help and support\n**technical** - Technical issues or bugs\n**account** - Account-related problems\n**report** - Report a user or issue\n**appeal** - Appeal a moderation action')
+            .setDescription('Please reply with one of the following categories:\n\n**general** - General help and support\n**technical** - Technical issues or bugs\n**account** - Account-related problems\n**report** - Report a user or issue')
             .setColor('#0099ff');
         return await message.reply({ embeds: [embed] });
     }

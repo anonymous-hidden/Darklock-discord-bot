@@ -250,10 +250,23 @@ function showDownloadPrompt(appName, button, originalText) {
 // ============================================================================
 let userSettings = {};
 
+function redirectToDashboardLogin() {
+    const next = encodeURIComponent('/dashboard');
+    window.location.href = `/login?next=${next}`;
+}
+
 async function loadUserData() {
     try {
         const response = await fetch('/platform/dashboard/api/me');
+        if (response.status === 401) {
+            redirectToDashboardLogin();
+            return;
+        }
         const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(data.error || 'Failed to load user data');
+        }
         
         if (data.success) {
             currentUser = data.user;
@@ -272,7 +285,15 @@ async function loadUserData() {
 async function loadUserSettings() {
     try {
         const response = await fetch('/platform/dashboard/api/settings');
+        if (response.status === 401) {
+            redirectToDashboardLogin();
+            return;
+        }
         const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(data.error || 'Failed to load user settings');
+        }
         
         if (data.success && data.settings) {
             userSettings = data.settings;

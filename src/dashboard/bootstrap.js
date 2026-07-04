@@ -120,6 +120,10 @@ async function bootstrap(dashboard) {
     // Uploads directory
     app.use('/uploads', express.static(path.join(__dirname, '../../uploads')));
 
+    // Serve platform static assets (maps /platform/static/* -> darklock/public/)
+    // This ensures the platform site assets (icons, css, js) are served with correct MIME types
+    app.use('/platform/static', express.static(path.join(__dirname, '../../darklock/public')));
+
     // ═══════════════════════════════════════════════════════════════════
     // 5. ERROR HANDLING
     // ═══════════════════════════════════════════════════════════════════

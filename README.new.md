@@ -4,6 +4,45 @@ All apps, services, ports, and troubleshooting in one place.
 
 ---
 
+## 🚀 Quick Start — Run Everything in One Command
+
+```bash
+cd "/home/cayden/discord bot/discord bot"
+./start-all.sh                    # Start ALL services
+```
+
+**What this launches:**
+- Discord Bot (port 3001) + Dashboard
+- Darklock Platform (port 3002)
+- Secure Channel IDS (4100) + Relay (4101)
+- Darklock Guard Service + Guard UI
+- Room Control Bridge (localhost:3099)
+
+**Stop everything:**
+```bash
+./stop-all.sh
+```
+
+---
+
+## Individual App Quick Start
+
+| App | Start Command | Port | Logs |
+|-----|---------------|------|------|
+| **Discord Bot** | `npm start` | 3001 | `tail -f logs/combined.log` |
+| **Darklock Platform** | `node darklock/start.js` | 3002 | `tail -f logs/darklock-startup.log` |
+| **Jarvis AI (backend)** | `cd jarvis && source .venv/bin/activate && python3 main.py` | 8950 | stdout |
+| **Jarvis AI (frontend)** | `cd jarvis/desktop && npm run dev` | 5173 | stdout |
+| **Nova Terminal** | `python3 ai-terminal.py` | N/A | stdout |
+| **Secure Channel IDS** | `cd secure-channel/services/dl_ids && npm start` | 4100 | stdout |
+| **Secure Channel Relay** | `cd secure-channel/services/dl_rly && npm start` | 4101 | stdout |
+| **Secure Channel App** | `cd secure-channel/apps/dl-secure-channel && npm run dev` | 5173 | stdout |
+| **Guard v2 Service** | `export GUARD_VAULT_PASSWORD=... && ./guard-v2/target/debug/guard-service run` | N/A | stdout |
+| **Guard v2 Desktop** | `cd guard-v2/desktop && npm run tauri dev` | 5173 | stdout |
+| **Darklock App** | `cd darklock-app && npm run dev` | 5173 | stdout |
+
+---
+
 ## Quick Reference — Ports & URLs
 
 | Service | Port | URL |
@@ -71,25 +110,6 @@ curl -H "Authorization: Bearer $CHATGPT_ACTIONS_TOKEN" \
 - Server URL in spec: `https://darklock.net/api`
 - In ChatGPT Actions, import/paste that OpenAPI schema
 - Set auth type to Bearer token and use the same `CHATGPT_ACTIONS_TOKEN`
-
----
-
-## Start / Stop Everything
-
-```bash
-# Start ALL services (bot + platform + guard + secure channel)
-cd "/home/cayden/discord bot/discord bot" && ./start-all.sh
-
-# Stop ALL services
-cd "/home/cayden/discord bot/discord bot" && ./stop-all.sh
-```
-
-**What `start-all.sh` launches:**
-1. Discord Bot (port 3001)
-2. Darklock Platform Server (port 3002)
-3. Secure Channel IDS (port 4100) + Relay (port 4101)
-4. Darklock Guard Service daemon + Guard UI (Tauri)
-5. Room Control Bridge (localhost:3099) — Pico serial + Govee LAN
 
 ---
 
@@ -1202,3 +1222,202 @@ WS   /ws                       WebSocket chat (streaming)
 POST /api/tts                  Text-to-speech
 POST /api/stt                  Speech-to-text
 ```
+---
+
+## 📤 Deploying Changes — Step-by-Step
+
+Choose your workflow: **Local Testing First** (recommended) or **Direct Remote Edit**. Always backup before pushing.
+
+---
+
+### Workflow A: Local Testing + Deploy (Recommended)
+
+Best for: Complex changes, testing features, multiple files.
+
+#### Step 1: Edit & Test Locally
+
+```bash
+cd "/home/cayden/discord bot/discord bot"
+
+# Make changes (e.g., src/dashboard/dashboard.js)
+nano src/dashboard/dashboard.js
+
+# Test syntax (for Node files)
+node --check src/dashboard/dashboard.js
+
+# Test locally before deploying
+npm run dev  # or npm start
+```
+
+#### Step 2: Deploy to Server (SSH or Tailscale)
+
+**Option A1: Over SSH (Local Network)**
+```bash
+cd "/home/cayden/discord bot/discord bot"
+rsync -av --relative src/dashboard/dashboard.js \
+  darklock@192.168.50.173:/mnt/nvme/discord-bot/
+```
+
+**Option A2: Over Tailscale (Remote)**
+```bash
+cd "/home/cayden/discord bot/discord bot"
+
+# Get your Tailscale IP first
+tailscale ip  # e.g., 100.67.64.x
+
+# Deploy using Tailscale IP
+rsync -av --relative src/dashboard/dashboard.js \
+  darklock@100.67.64.x:/mnt/nvme/discord-bot/
+```
+
+#### Step 3: Verify & Restart (On Server)
+
+```bash
+# Check syntax
+ssh darklock@192.168.50.173 "cd /mnt/nvme/discord-bot && node --check src/dashboard/dashboard.js"
+
+# Regenerate anti-tamper baseline
+ssh darklock@192.168.50.173 "cd /mnt/nvme/discord-bot && npm run tamper:generate"
+
+# Restart bot
+ssh darklock@192.168.50.173 "setsid bash -lc 'pkill -f \"node src/bot.js\" || true' >/dev/null 2>&1 < /dev/null &"
+
+# Wait and verify
+sleep 5
+ssh darklock@192.168.50.173 "systemctl is-active darklock-bot.service"
+```
+
+#### Step 4: Verify Live
+
+```bash
+# Health check
+ssh darklock@192.168.50.173 "curl -s http://localhost:3001/health"
+
+# Check for errors in logs
+ssh darklock@192.168.50.173 "journalctl -u darklock-bot.service -n 20 --no-pager | grep -i error"
+```
+
+---
+
+### Workflow B: Quick Remote Edit (Direct on Server)
+
+Best for: One-line fixes, when you're already SSH'd in.
+
+#### Step 1: Backup the File
+
+```bash
+ssh darklock@192.168.50.173 "cd /mnt/nvme/discord-bot && cp src/dashboard/dashboard.js src/dashboard/dashboard.js.bak-$(date +%F-%H%M%S)"
+```
+
+#### Step 2: Edit on Server
+
+```bash
+ssh -t darklock@192.168.50.173 "cd /mnt/nvme/discord-bot && nano src/dashboard/dashboard.js"
+# Save: Ctrl+O, Exit: Ctrl+X
+```
+
+#### Step 3: Verify & Restart
+
+```bash
+ssh darklock@192.168.50.173 "cd /mnt/nvme/discord-bot && node --check src/dashboard/dashboard.js && npm run tamper:generate && setsid bash -lc 'pkill -f \"node src/bot.js\" || true' >/dev/null 2>&1 < /dev/null &"
+
+sleep 5
+ssh darklock@192.168.50.173 "systemctl is-active darklock-bot.service"
+```
+
+---
+
+### Deploying Multiple Files at Once
+
+```bash
+cd "/home/cayden/discord bot/discord bot"
+
+# Deploy several files in one rsync
+rsync -av --relative \
+  src/dashboard/dashboard.js \
+  src/utils/logger.js \
+  src/systems/DiscordLogger.js \
+  darklock@192.168.50.173:/mnt/nvme/discord-bot/
+
+# Then verify on server
+ssh darklock@192.168.50.173 "cd /mnt/nvme/discord-bot && node --check src/dashboard/dashboard.js && npm run tamper:generate"
+```
+
+---
+
+### ⚠️ CRITICAL: Files That Require Special Handling
+
+These files are **hand-edited on the server** and must **NEVER** be bulk-replaced via rsync:
+
+- `darklock/server.js` — Platform routes (edit interactively only)
+- `.env` — Environment secrets (edit on server with `nano .env`)
+- Anything in `darklock/data/` — User data and configurations
+
+**Safe approach for these files:**
+
+```bash
+# Always backup first
+ssh darklock@192.168.50.173 "cd /mnt/nvme/discord-bot && cp server.js server.js.bak-$(date +%F-%H%M%S)"
+
+# Edit interactively on the server only
+ssh -t darklock@192.168.50.173 "cd /mnt/nvme/discord-bot && nano server.js"
+
+# Verify syntax
+ssh darklock@192.168.50.173 "node --check server.js"
+
+# Restart
+ssh darklock@192.168.50.173 "setsid bash -lc 'pkill -f \"node src/bot.js\" || true' >/dev/null 2>&1 < /dev/null &"
+```
+
+---
+
+### Using Tailscale for Remote Access
+
+If you're outside the local network, use Tailscale instead of direct SSH:
+
+```bash
+# 1. Find your Tailscale IP
+tailscale ip
+# Output: 100.67.64.x
+
+# 2. Use it everywhere instead of 192.168.50.173
+rsync -av --relative src/file.js darklock@100.67.64.x:/mnt/nvme/discord-bot/
+
+# 3. SSH commands work the same way
+ssh darklock@100.67.64.x "cd /mnt/nvme/discord-bot && npm run tamper:generate"
+```
+
+**Benefits:**
+- No port forwarding needed
+- Encrypted tunnel automatically
+- Works from anywhere (phone hotspot, coffee shop, etc.)
+- Same commands as local SSH
+
+---
+
+### Quick Deployment Command Reference
+
+| Task | Command |
+|------|----------|
+| **Deploy single file** | `rsync -av --relative src/file.js darklock@192.168.50.173:/mnt/nvme/discord-bot/` |
+| **Deploy multiple files** | `rsync -av --relative src/file1.js src/file2.js darklock@192.168.50.173:/mnt/nvme/discord-bot/` |
+| **Backup file before edit** | `ssh darklock@192.168.50.173 "cp src/file.js src/file.js.bak-$(date +%F)"` |
+| **Syntax check** | `ssh darklock@192.168.50.173 "node --check src/file.js"` |
+| **Regenerate tamper baseline** | `ssh darklock@192.168.50.173 "cd /mnt/nvme/discord-bot && npm run tamper:generate"` |
+| **Restart bot immediately** | `ssh darklock@192.168.50.173 "setsid bash -lc 'pkill -f \"node src/bot.js\" || true'"` |
+| **Check if bot is running** | `ssh darklock@192.168.50.173 "systemctl is-active darklock-bot.service"` |
+| **View last 30 log lines** | `ssh darklock@192.168.50.173 "journalctl -u darklock-bot.service -n 30 --no-pager"` |
+| **Stream live logs** | `ssh darklock@192.168.50.173 "journalctl -u darklock-bot.service -f"` |
+| **Health check** | `ssh darklock@192.168.50.173 "curl -s http://localhost:3001/health"` |
+
+---
+
+### Pro Tips
+
+1. **Test locally first** — `node --check` catches errors before they hit production.
+2. **Use rsync for speed** — Only uploads changed bytes, not entire files.
+3. **Backup before big changes** — One command: `cp file.js file.js.bak-$(date +%F)`
+4. **Check logs immediately after restart** — Catch errors early: `journalctl -u darklock-bot.service -f`
+5. **Tailscale = remote-friendly** — No firewall holes, just use Tailscale IP.
+6. **SSH into server for complex edits** — Nano/Vim is safer than juggling local+remote files.
+7. **Always regenerate tamper baseline** — After deploying tracked files (views, assets, static code).

@@ -74,8 +74,7 @@ class TicketManager {
             { name: 'General Support', description: 'General help and support', emoji: '❓', priority: 'medium' },
             { name: 'Technical Issue', description: 'Report technical problems', emoji: '🛠️', priority: 'high' },
             { name: 'Account Issue', description: 'Account-related problems', emoji: '👤', priority: 'medium' },
-            { name: 'Report User', description: 'Report rule violations', emoji: '⚠️', priority: 'high' },
-            { name: 'Appeal', description: 'Appeal moderation actions', emoji: '📋', priority: 'medium' }
+            { name: 'Report User', description: 'Report rule violations', emoji: '⚠️', priority: 'high' }
         ];
 
         for (const category of defaultCategories) {

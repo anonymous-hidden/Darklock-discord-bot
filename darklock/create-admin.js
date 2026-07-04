@@ -8,7 +8,7 @@
  * Arguments:
  *   email     - Admin email address
  *   password  - Password (min 12 characters)
- *   role      - 'owner' or 'admin' (default: admin)
+ *   role      - owner|coowner|admin|mod|helper|bug_tester|pr (default: admin)
  * 
  * Example:
  *   node create-admin.js admin@example.com MySecurePass123! owner
@@ -41,7 +41,7 @@ Usage:
 Arguments:
   email     - Admin email address (required)
   password  - Password, min 12 characters (required)
-  role      - 'owner' or 'admin' (default: admin)
+    role      - owner|coowner|admin|mod|helper|bug_tester|pr (default: admin)
 
 Examples:
   node create-admin.js admin@example.com MySecurePass123!
@@ -81,8 +81,9 @@ Security:
     }
 
     // Validate role
-    if (!['owner', 'admin'].includes(role)) {
-        console.error('❌ Error: Role must be "owner" or "admin"');
+    const validRoles = ['owner', 'coowner', 'admin', 'mod', 'helper', 'bug_tester', 'pr'];
+    if (!validRoles.includes(role)) {
+        console.error('❌ Error: Role must be one of: ' + validRoles.join(', '));
         process.exit(1);
     }
 

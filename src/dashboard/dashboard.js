@@ -224,42 +224,6 @@ class SecurityDashboard {
                     return res.status(401).json({ error: 'User not authenticated' });
                 }
 
-                // Check if user already has an active premium subscription
-                try {
-                    const existingSubscription = await new Promise((resolve, reject) => {
-                        this.bot.database.db.get(
-                            `SELECT subscription_id, status, plan_type, current_period_end 
-                             FROM stripe_subscriptions 
-                             WHERE customer_email = (
-                                 SELECT email FROM users WHERE discord_id = ?
-                             ) AND status IN ('active', 'trialing')
-                             ORDER BY created_at DESC
-                             LIMIT 1`,
-                            [userId],
-                            (err, row) => {
-                                if (err) reject(err);
-                                else resolve(row);
-                            }
-                        );
-                    });
-
-                    if (existingSubscription) {
-                        console.log('[Stripe Checkout] User already has active subscription:', existingSubscription);
-                        const periodEnd = new Date(existingSubscription.current_period_end * 1000);
-                        return res.status(400).json({ 
-                            error: 'You already have an active premium subscription',
-                            subscription: {
-                                plan: existingSubscription.plan_type,
-                                status: existingSubscription.status,
-                                renewsAt: periodEnd.toISOString()
-                            }
-                        });
-                    }
-                } catch (dbError) {
-                    console.error('[Stripe Checkout] Error checking existing subscription:', dbError);
-                    // Continue if table doesn't exist yet - this is fine for first-time setup
-                }
-
                 const validPlans = new Set(['pro', 'monthly', 'enterprise', 'starter']);
                 if (!validPlans.has(requestedPlan)) {
                     return res.status(400).json({ error: 'Invalid plan selected' });
@@ -291,6 +255,39 @@ class SecurityDashboard {
                     const guildAccess = await this.checkGuildAccess(userId, guildId, true);
                     if (!guildAccess?.authorized) {
                         return res.status(403).json({ error: guildAccess?.error || 'You do not have access to this Discord server' });
+                    }
+
+                    // Prevent duplicate Pro on the same server, and block if already Enterprise-covered.
+                    // (A user CAN still buy Pro for a different, unpaid server.)
+                    try {
+                        const currentPlan = await this.bot.getGuildPlan(guildId);
+                        if (currentPlan?.is_active) {
+                            const effective = currentPlan.effectivePlan || currentPlan.plan;
+                            if (effective === 'enterprise') {
+                                return res.status(400).json({ error: 'This server is already covered by DarkLock Enterprise.' });
+                            }
+                            if (effective === 'pro') {
+                                return res.status(400).json({ error: 'This server already has DarkLock Pro.' });
+                            }
+                        }
+                    } catch (planErr) {
+                        console.warn('[Stripe Checkout] Could not verify existing guild plan:', planErr.message);
+                    }
+                } else {
+                    // Enterprise covers every server the user is in — block buying it twice.
+                    try {
+                        const now = Math.floor(Date.now() / 1000);
+                        const existingEnterprise = await this.bot.database.get(
+                            `SELECT subscription_id FROM stripe_subscriptions
+                             WHERE user_id = ? AND plan_type = 'enterprise' AND status IN ('active', 'trialing')
+                             AND (current_period_end IS NULL OR current_period_end > ?) LIMIT 1`,
+                            [userId, now]
+                        );
+                        if (existingEnterprise) {
+                            return res.status(400).json({ error: 'You already have an active DarkLock Enterprise subscription.' });
+                        }
+                    } catch (entErr) {
+                        console.warn('[Stripe Checkout] Could not verify existing enterprise plan:', entErr.message);
                     }
                 }
 
@@ -425,6 +422,8 @@ class SecurityDashboard {
                 const customerEmail = session.customer_details?.email || '';
                 const subscriptionId = session.subscription?.id || session.subscription;
                 const customerId = session.customer;
+                // Honor the purchased tier (pro vs enterprise) instead of assuming pro.
+                const metadataPlan = (String(session.metadata?.plan || '').toLowerCase() === 'enterprise') ? 'enterprise' : 'pro';
 
                 // Save subscription to database
                 if (this.bot?.database?.db) {
@@ -463,13 +462,14 @@ class SecurityDashboard {
                     this.bot.database.db.run(
                         `INSERT OR REPLACE INTO stripe_subscriptions 
                          (subscription_id, customer_id, customer_email, guild_id, user_id, status, plan_type, current_period_start, current_period_end, updated_at) 
-                         VALUES (?, ?, ?, ?, ?, 'active', 'pro', ?, ?, datetime('now'))`,
+                         VALUES (?, ?, ?, ?, ?, 'active', ?, ?, ?, datetime('now'))`,
                         [
                             subscriptionId,
                             customerId,
                             customerEmail,
                             metadataGuildId || null,
                             userId,
+                            metadataPlan,
                             session.subscription?.current_period_start,
                             session.subscription?.current_period_end
                         ],
@@ -486,21 +486,22 @@ class SecurityDashboard {
                 // Bind subscription to a guild so /commands and dashboard tier checks work
                 if (metadataGuildId && this.bot?.database?.setGuildSubscription) {
                     try {
-                        const plan = 'pro';
                         await this.bot.database.setGuildSubscription(metadataGuildId, {
-                            plan,
+                            plan: metadataPlan,
                             status: 'active',
                             current_period_end: session.subscription?.current_period_end || null,
                             stripe_customer_id: customerId,
                             stripe_subscription_id: subscriptionId
                         });
-                        // Bust cached plan lookups
-                        if (this._userPlanCache) this._userPlanCache.delete(userId);
-                        console.log('[Stripe] Guild subscription set:', metadataGuildId, '->', plan);
+                        console.log('[Stripe] Guild subscription set:', metadataGuildId, '->', metadataPlan);
                     } catch (e) {
                         console.error('[Stripe] Failed to set guild subscription:', e.message);
                     }
                 }
+
+                // Bust cached plan lookups so the new tier applies immediately
+                // (covers Enterprise, which has no guild binding).
+                this.clearUserPlanCache(userId);
 
                 // Send email
                 if (customerEmail) {
@@ -705,6 +706,10 @@ DarkLock`
                 let html = fs.readFileSync(htmlPath, 'utf8');
                 // Inject Stripe publishable key
                 html = html.replace('{{ STRIPE_PUBLISHABLE_KEY }}', this.billingConfig.publishableKey);
+                // Avoid stale cached scripts causing auth redirect loops on payment page.
+                res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+                res.setHeader('Pragma', 'no-cache');
+                res.setHeader('Expires', '0');
                 res.send(html);
             } catch (e) {
                 res.status(404).send('Payment page not found');
@@ -712,6 +717,14 @@ DarkLock`
         };
         this.app.get('/payment', paymentHandler);
         this.app.get('/payment.html', paymentHandler);
+        this.app.get('/site/payment', (req, res) => {
+            const qs = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '';
+            res.redirect(`/payment${qs}`);
+        });
+        this.app.get('/site/payment.html', (req, res) => {
+            const qs = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '';
+            res.redirect(`/payment${qs}`);
+        });
         // Payment success page
         this.app.get('/payment-success.html', (req, res) => {
             try {
@@ -871,61 +884,79 @@ DarkLock`
     }
 
     async getUserPlan(userId) {
-        if (!userId) return { plan: 'free', isPremium: false };
+        if (!userId) return { plan: 'free', isPremium: false, isEnterprise: false };
 
-        // Local admin login is always full-access in the bot dashboard.
+        // Local admin login is always full-access (Enterprise) in the bot dashboard.
         if (userId === 'admin') {
-            return { plan: 'premium', isPremium: true };
+            return { plan: 'enterprise', isPremium: true, isEnterprise: true };
         }
 
-        // Cache results for 30s to prevent DB saturation from rapid polls
+        // Cache results for 15s to prevent DB saturation from rapid polls while
+        // still reflecting admin grants / purchases quickly.
         if (!this._userPlanCache) this._userPlanCache = new Map();
         const cached = this._userPlanCache.get(userId);
         if (cached && Date.now() < cached.expires) return cached.result;
 
-        let subscription = null;
-        let user = null;
+        const RANK = { free: 0, pro: 1, enterprise: 2 };
+        const NAME = ['free', 'pro', 'enterprise'];
+        let best = 0;
 
+        // 1) Admin manual grant (Discord-user-scoped comp).
         try {
-            subscription = await new Promise((resolve) => {
+            const manual = await this.bot.database.getManualUserPlan(userId);
+            if (manual && RANK[manual] != null) best = Math.max(best, RANK[manual]);
+        } catch (e) { /* table may not exist yet */ }
+
+        // 2) Active Stripe subscription for this Discord user (pro/enterprise).
+        try {
+            const subscription = await new Promise((resolve) => {
                 this.bot.database.db.get(
-                    `SELECT ss.subscription_id, ss.status
+                    `SELECT ss.plan_type
                      FROM stripe_subscriptions ss
-                     LEFT JOIN users u ON u.email = ss.customer_email
-                     WHERE (ss.user_id = ? OR u.discord_id = ?)
-                     AND ss.status IN ('active', 'trialing')
-                     ORDER BY ss.created_at DESC
+                     LEFT JOIN users u ON (u.id = ss.user_id OR u.email = ss.customer_email)
+                     WHERE ss.status IN ('active', 'trialing')
+                       AND (ss.current_period_end IS NULL OR ss.current_period_end > CAST(strftime('%s','now') AS INTEGER))
+                       AND (
+                            ss.user_id = ?
+                            OR u.id = ?
+                            OR u.discord_id = ?
+                            OR ss.customer_email = (
+                                SELECT email FROM users WHERE id = ? OR discord_id = ? LIMIT 1
+                            )
+                       )
+                     ORDER BY COALESCE(ss.updated_at, ss.created_at) DESC, ss.created_at DESC
                      LIMIT 1`,
-                    [userId, userId],
-                    (err, row) => {
-                        if (err) resolve(null);
-                        else resolve(row);
-                    }
+                    [userId, userId, userId, userId, userId],
+                    (err, row) => resolve(err ? null : row)
                 );
             });
-        } catch (e) {
-            subscription = null;
-        }
+            if (subscription) {
+                const t = String(subscription.plan_type || 'pro').toLowerCase();
+                best = Math.max(best, RANK[t] != null ? RANK[t] : RANK.pro);
+            }
+        } catch (e) { /* ignore */ }
 
+        // 3) Legacy is_pro flag on the bot users table.
         try {
-            user = await new Promise((resolve) => {
+            const user = await new Promise((resolve) => {
                 this.bot.database.db.get(
                     `SELECT is_pro FROM users WHERE discord_id = ? OR id = ?`,
                     [userId, userId],
-                    (err, row) => {
-                        if (err) resolve(null);
-                        else resolve(row);
-                    }
+                    (err, row) => resolve(err ? null : row)
                 );
             });
-        } catch (e) {
-            user = null;
-        }
+            if (user && user.is_pro) best = Math.max(best, RANK.pro);
+        } catch (e) { /* ignore */ }
 
-        const isPremium = Boolean(subscription) || Boolean(user && user.is_pro);
-        const result = { plan: isPremium ? 'premium' : 'free', isPremium };
-        this._userPlanCache.set(userId, { result, expires: Date.now() + 30000 });
+        const plan = NAME[best] || 'free';
+        const result = { plan, isPremium: best > 0, isEnterprise: best >= RANK.enterprise };
+        this._userPlanCache.set(userId, { result, expires: Date.now() + 15000 });
         return result;
+    }
+
+    /** Invalidate a cached plan so admin grants / purchases apply immediately. */
+    clearUserPlanCache(userId) {
+        if (this._userPlanCache && userId) this._userPlanCache.delete(String(userId));
     }
 
     // Simple cookie parser (avoid extra dependency)
@@ -1107,6 +1138,18 @@ DarkLock`
         this.app.get('/setup/moderation', this.authenticateToken.bind(this), (req, res) => {
             res.sendFile(path.join(__dirname, 'views/setup-moderation.html'));
         });
+
+        // Multi-Server Moderation (Enterprise). The page itself loads for any
+        // authenticated user; the client shows an Enterprise lock screen and the
+        // API routes below enforce Enterprise on the backend (never trust client).
+        this.app.get('/setup/multi-server', this.authenticateToken.bind(this), (req, res) => {
+            res.sendFile(path.join(__dirname, 'views/setup-multi-server.html'));
+        });
+
+        // Register Multi-Server Moderation API routes (Enterprise-gated backend).
+        try { this.setupMultiServerModerationRoutes(); } catch (e) {
+            this.bot?.logger?.warn?.('Failed to register multi-server moderation routes:', e.message || e);
+        }
 
         this.app.get('/setup/features', this.authenticateToken.bind(this), (req, res) => {
             res.sendFile(path.join(__dirname, 'views/setup-features.html'));
@@ -1406,7 +1449,7 @@ DarkLock`
         this.app.get('/login', (req, res) => {
             // Store ?next= redirect destination in a short-lived cookie
             const next = req.query.next;
-            if (next && /^\/[a-zA-Z0-9\-_/?=&]+$/.test(next)) {
+            if (next && /^\/[a-zA-Z0-9\-_./?=&%]+$/.test(next)) {
                 res.cookie('auth_next', next, { httpOnly: true, sameSite: 'lax', maxAge: 10 * 60 * 1000, path: '/' });
             }
             res.sendFile(path.join(__dirname, 'views/login.html'));
@@ -1697,7 +1740,9 @@ ${Object.entries(colors).map(([key, value]) => `    ${key}: ${value};`).join('\n
             console.log('========================================\n');
             
             const entitlement = await this.getUserPlan(req.user?.userId);
-            const hasAccess = req.user?.hasAccess ?? this.isPrivilegedDashboardUser(req.user);
+            const targetGuildId = req.query?.guildId || req.headers?.['x-guild-id'] || req.user?.accessGuild || null;
+            const accessProfile = await this.resolveDashboardAccessForGuild(req, targetGuildId);
+            const hasAccess = (req.user?.hasAccess ?? false) || accessProfile.hasAccess || this.isPrivilegedDashboardUser(req.user);
 
             res.json({
                 success: true,
@@ -1708,8 +1753,13 @@ ${Object.entries(colors).map(([key, value]) => `    ${key}: ${value};`).join('\n
                     globalName: req.user.globalName,
                     avatar: req.user.avatar,
                     role: req.user.role,
+                    dashboardRole: accessProfile.normalizedRole,
+                    permissions: {
+                        features: accessProfile.features,
+                        tickets: accessProfile.ticket,
+                    },
                     hasAccess,
-                    accessGuild: req.user.accessGuild,
+                    accessGuild: accessProfile.guildId || req.user.accessGuild,
                     guilds: req.user.guilds || [],
                     plan: entitlement.plan,
                     isPremium: entitlement.isPremium
@@ -1747,7 +1797,9 @@ ${Object.entries(colors).map(([key, value]) => `    ${key}: ${value};`).join('\n
         this.app.get('/api/auth/me', async (req, res) => {
             if (!req.user?.userId) return res.status(401).json({ error: 'Unauthorized' });
             const entitlement = await this.getUserPlan(req.user.userId);
-            const hasAccess = req.user?.hasAccess ?? this.isPrivilegedDashboardUser(req.user);
+            const targetGuildId = req.query?.guildId || req.headers?.['x-guild-id'] || req.user?.accessGuild || null;
+            const accessProfile = await this.resolveDashboardAccessForGuild(req, targetGuildId);
+            const hasAccess = (req.user?.hasAccess ?? false) || accessProfile.hasAccess || this.isPrivilegedDashboardUser(req.user);
             res.json({
                 id: req.user.userId,
                 userId: req.user.userId,
@@ -1755,8 +1807,13 @@ ${Object.entries(colors).map(([key, value]) => `    ${key}: ${value};`).join('\n
                 globalName: req.user.globalName,
                 avatar: req.user.avatar,
                 role: req.user.role,
+                dashboardRole: accessProfile.normalizedRole,
+                permissions: {
+                    features: accessProfile.features,
+                    tickets: accessProfile.ticket,
+                },
                 hasAccess,
-                accessGuild: req.user.accessGuild,
+                accessGuild: accessProfile.guildId || req.user.accessGuild,
                 guilds: req.user.guilds || [],
                 plan: entitlement.plan,
                 isPremium: entitlement.isPremium
@@ -1768,27 +1825,47 @@ ${Object.entries(colors).map(([key, value]) => `    ${key}: ${value};`).join('\n
             try {
                 const userId = req.user?.userId;
                 if (!userId) {
-                    return res.json({ isPremium: false, tier: 'free' });
+                    return res.json({ isPremium: false, isEnterprise: false, tier: 'free', plan: 'free', features: [] });
                 }
                 const entitlement = await this.getUserPlan(userId);
-                console.log('[Premium Status] User:', userId, 'isPremium:', entitlement.isPremium);
+                console.log('[Premium Status] User:', userId, 'plan:', entitlement.plan);
+
+                // Feature sets aligned with https://admin.darklock.net/payment
+                const FREE_FEATURES = [
+                    'anti-nuke-basic', 'anti-raid-basic', 'anti-spam-basic',
+                    'anti-phishing-basic', 'tickets-basic', 'analytics-basic',
+                    'xp-basic', 'moderation-core', 'welcome-core', 'dashboard-basic'
+                ];
+                const PRO_FEATURES = [
+                    'anti-raid-advanced', 'anti-spam-advanced', 'anti-nuke-advanced',
+                    'anti-phishing', 'automod-advanced', 'webhook-protection',
+                    'tickets-advanced', 'analytics-advanced', 'setup-commands',
+                    'admin-commands', 'config-commands', 'backup', 'role-management',
+                    'autorole', 'console', 'access-generator', 'access-share'
+                ];
+                const ENTERPRISE_FEATURES = [
+                    ...PRO_FEATURES,
+                    'analytics-dashboard-advanced', 'voice-monitoring', 'channel-access-control',
+                    'trust-score', 'scheduled-announcements', 'xp-advanced',
+                    'beta-access', 'priority-support', 'multi-server'
+                ];
+
+                let features = FREE_FEATURES;
+                if (entitlement.isEnterprise) features = ENTERPRISE_FEATURES;
+                else if (entitlement.isPremium) features = PRO_FEATURES;
 
                 res.json({
                     isPremium: entitlement.isPremium,
+                    isEnterprise: entitlement.isEnterprise,
                     tier: entitlement.plan,
                     plan: entitlement.plan,
                     status: entitlement.isPremium ? 'active' : 'inactive',
                     expiresAt: null,
-                    features: entitlement.isPremium ? [
-                        'anti-nuke', 'anti-phishing', 'moderation-advanced',
-                        'verification', 'autorole', 'console', 'access-generator',
-                        'access-share', 'tickets', 'analytics-advanced', 'logs-full',
-                        'backup', 'priority-support'
-                    ] : []
+                    features
                 });
             } catch (error) {
                 console.error('[Premium Status] Error:', error);
-                res.json({ isPremium: false, tier: 'free' });
+                res.json({ isPremium: false, isEnterprise: false, tier: 'free', plan: 'free', features: [] });
             }
         });
         
@@ -2423,6 +2500,7 @@ ${Object.entries(colors).map(([key, value]) => `    ${key}: ${value};`).join('\n
         this.app.post('/api/tickets/:id/assign', this.authenticateToken.bind(this), this.assignTicket.bind(this));
         this.app.post('/api/tickets/:id/status', this.authenticateToken.bind(this), this.updateTicketStatus.bind(this));
         this.app.post('/api/tickets/:id/priority', this.authenticateToken.bind(this), this.updateTicketPriority.bind(this));
+        this.app.post('/api/tickets/:id/category', this.authenticateToken.bind(this), this.updateTicketCategory.bind(this));
         this.app.post('/api/tickets/:id/claim', this.authenticateToken.bind(this), this.claimTicket.bind(this));
         this.app.post('/api/tickets/:id/notes', this.authenticateToken.bind(this), this.addTicketNote.bind(this));
         this.app.get('/api/tickets/:id/notes', this.authenticateToken.bind(this), this.getTicketNotes.bind(this));
@@ -2727,6 +2805,272 @@ ${Object.entries(colors).map(([key, value]) => `    ${key}: ${value};`).join('\n
         } else {
             return { authorized: false, member, error: 'You do not have access to this server', accessType: null };
         }
+    }
+
+    getRequestUserId(req) {
+        return req?.user?.discordId || req?.user?.userId || req?.user?.id || req?.user?.sub || null;
+    }
+
+    parseRoleIdList(value) {
+        if (!value) return [];
+
+        let roleIds = [];
+        if (Array.isArray(value)) {
+            roleIds = value;
+        } else if (typeof value === 'string') {
+            const raw = value.trim();
+            if (!raw) return [];
+
+            if (raw.startsWith('[')) {
+                try {
+                    const parsed = JSON.parse(raw);
+                    roleIds = Array.isArray(parsed) ? parsed : [];
+                } catch (error) {
+                    roleIds = raw.split(',');
+                }
+            } else {
+                roleIds = raw.split(',');
+            }
+        }
+
+        return [...new Set(roleIds
+            .map(id => String(id || '').trim())
+            .filter(id => /^\d{17,20}$/.test(id)))];
+    }
+
+    readPermissionFlag(value, defaultValue = false) {
+        if (value === null || value === undefined) return defaultValue;
+        if (typeof value === 'boolean') return value;
+        if (typeof value === 'number') return value !== 0;
+
+        const normalized = String(value).trim().toLowerCase();
+        if (normalized === '1' || normalized === 'true') return true;
+        if (normalized === '0' || normalized === 'false' || normalized === '') return false;
+        return defaultValue;
+    }
+
+    async findTicketGuildId(ticketId) {
+        const cleanId = String(ticketId || '').replace('ticket-', '').trim();
+        if (!cleanId) return null;
+
+        const lookups = [
+            { table: 'dm_tickets', where: 'id = ?', params: [cleanId] },
+            { table: 'tickets', where: 'id = ? OR ticket_id = ?', params: [cleanId, cleanId] },
+            { table: 'active_tickets', where: 'id = ? OR ticket_id = ?', params: [cleanId, cleanId] },
+        ];
+
+        for (const lookup of lookups) {
+            const row = await this.bot.database.get(
+                `SELECT guild_id FROM ${lookup.table} WHERE ${lookup.where} LIMIT 1`,
+                lookup.params
+            ).catch(() => null);
+
+            if (row?.guild_id) return String(row.guild_id);
+        }
+
+        return null;
+    }
+
+    async resolveDashboardAccessForGuild(req, guildIdInput = null) {
+        const userId = this.getRequestUserId(req);
+        const privilegedUser = this.isPrivilegedDashboardUser(req?.user);
+
+        const accessProfile = {
+            userId,
+            guildId: null,
+            normalizedRole: privilegedUser ? 'administration' : 'viewer',
+            hasAccess: privilegedUser,
+            features: {
+                tickets: privilegedUser,
+                analytics: privilegedUser,
+                security: privilegedUser,
+                overview: privilegedUser,
+                customize: privilegedUser,
+            },
+            ticket: {
+                canView: privilegedUser,
+                canReply: privilegedUser,
+                canManage: privilegedUser,
+                canNotes: privilegedUser,
+                canAnalytics: privilegedUser,
+            }
+        };
+
+        if (!userId) return accessProfile;
+
+        let guild = null;
+        if (guildIdInput) {
+            guild = this.bot?.client?.guilds?.cache?.get(guildIdInput) || null;
+        }
+        if (!guild) {
+            guild = this.getGuildFromRequest(req);
+        }
+        if (!guild) {
+            return accessProfile;
+        }
+
+        accessProfile.guildId = guild.id;
+
+        const member = await guild.members.fetch(userId).catch(() => null);
+        const userRoleIds = member ? member.roles.cache.map(r => r.id) : [];
+
+        const config = await this.bot.database.get(
+            `SELECT
+                ticket_staff_role,
+                ticket_manage_role,
+                ticket_support_roles,
+                admin_role_id,
+                mod_role_id,
+                mod_perm_tickets,
+                mod_perm_analytics,
+                mod_perm_security,
+                mod_perm_overview,
+                mod_perm_customize,
+                admin_perm_tickets,
+                admin_perm_analytics,
+                admin_perm_security,
+                admin_perm_overview,
+                admin_perm_customize
+             FROM guild_configs
+             WHERE guild_id = ?`,
+            [guild.id]
+        ).catch(() => null);
+
+        const supportRoleIds = this.parseRoleIdList(config?.ticket_support_roles);
+
+        const isOwner = guild.ownerId === userId;
+        const hasDiscordManage = !!member && (
+            member.permissions.has('Administrator') ||
+            member.permissions.has('ManageGuild')
+        );
+
+        const hasAdminRole = !!(config?.admin_role_id && userRoleIds.includes(config.admin_role_id));
+        const hasModRole = !!(config?.mod_role_id && userRoleIds.includes(config.mod_role_id));
+        const hasTicketStaffRole = !!(config?.ticket_staff_role && userRoleIds.includes(config.ticket_staff_role));
+        const hasTicketManageRole = !!(config?.ticket_manage_role && userRoleIds.includes(config.ticket_manage_role));
+        const hasTicketSupportRole = supportRoleIds.some(roleId => userRoleIds.includes(roleId));
+
+        const explicitAccess = await this.bot.database.get(
+            'SELECT 1 AS ok FROM dashboard_access WHERE guild_id = ? AND user_id = ? LIMIT 1',
+            [guild.id, userId]
+        ).catch(() => null);
+
+        const roleAccessRows = await this.bot.database.all(
+            'SELECT role_id FROM dashboard_role_access WHERE guild_id = ?',
+            [guild.id]
+        ).catch(() => []);
+
+        const hasDashboardRoleGrant = Array.isArray(roleAccessRows) && roleAccessRows.some(row => userRoleIds.includes(row.role_id));
+        const hasExplicitAccess = !!explicitAccess;
+        const hasAnyTicketRole = hasTicketStaffRole || hasTicketManageRole || hasTicketSupportRole || hasModRole || hasAdminRole;
+
+        const hasGeneralAccess = privilegedUser || isOwner || hasDiscordManage || hasExplicitAccess || hasDashboardRoleGrant || hasAnyTicketRole;
+
+        let normalizedRole = 'viewer';
+        if (privilegedUser || isOwner || hasDiscordManage || hasAdminRole) {
+            normalizedRole = 'administration';
+        } else if (hasModRole || hasTicketManageRole || hasTicketStaffRole || hasTicketSupportRole || hasDashboardRoleGrant) {
+            normalizedRole = 'moderation';
+        }
+
+        let features = {
+            tickets: false,
+            analytics: false,
+            security: false,
+            overview: false,
+            customize: false,
+        };
+
+        if (normalizedRole === 'administration') {
+            features = {
+                tickets: this.readPermissionFlag(config?.admin_perm_tickets, true),
+                analytics: this.readPermissionFlag(config?.admin_perm_analytics, true),
+                security: this.readPermissionFlag(config?.admin_perm_security, true),
+                overview: this.readPermissionFlag(config?.admin_perm_overview, true),
+                customize: this.readPermissionFlag(config?.admin_perm_customize, true),
+            };
+        } else if (normalizedRole === 'moderation') {
+            features = {
+                tickets: hasAnyTicketRole || this.readPermissionFlag(config?.mod_perm_tickets, false),
+                analytics: this.readPermissionFlag(config?.mod_perm_analytics, false),
+                security: this.readPermissionFlag(config?.mod_perm_security, false),
+                overview: this.readPermissionFlag(config?.mod_perm_overview, false),
+                customize: this.readPermissionFlag(config?.mod_perm_customize, false),
+            };
+        }
+
+        if (privilegedUser) {
+            features = {
+                tickets: true,
+                analytics: true,
+                security: true,
+                overview: true,
+                customize: true,
+            };
+        }
+
+        const canViewTickets = hasGeneralAccess && (
+            features.tickets || privilegedUser || isOwner || hasDiscordManage || hasAnyTicketRole
+        );
+
+        const canManageTickets = privilegedUser || isOwner || hasDiscordManage || hasAdminRole || hasModRole || hasTicketManageRole;
+        // TEMPORARY override: allow replies for all users who can view tickets.
+        const canReplyToTickets = canViewTickets;
+
+        accessProfile.normalizedRole = normalizedRole;
+        accessProfile.hasAccess = hasGeneralAccess;
+        accessProfile.features = features;
+        accessProfile.ticket = {
+            canView: canViewTickets,
+            canReply: canReplyToTickets,
+            canManage: canManageTickets,
+            canNotes: canReplyToTickets,
+            canAnalytics: features.analytics,
+        };
+
+        return accessProfile;
+    }
+
+    async requireTicketPermission(req, res, options = {}) {
+        const cleanTicketId = options.ticketId
+            ? String(options.ticketId).replace('ticket-', '').trim()
+            : null;
+
+        let guildId = options.guildId || req.query?.guildId || req.headers?.['x-guild-id'] || req.body?.guildId || null;
+        if (!guildId && cleanTicketId) {
+            guildId = await this.findTicketGuildId(cleanTicketId);
+        }
+
+        if (!guildId && cleanTicketId) {
+            res.status(400).json({ error: 'Unable to resolve ticket server' });
+            return null;
+        }
+
+        const access = await this.resolveDashboardAccessForGuild(req, guildId);
+        const canManageTickets = !!access?.ticket?.canManage;
+        // TEMPORARY override: treat ticket view access as reply access.
+        const canReplyTickets = !!access?.ticket?.canReply || canManageTickets || !!access?.ticket?.canView;
+
+        if (access?.ticket) {
+            access.ticket.canReply = canReplyTickets;
+        }
+
+        if (!access.ticket.canView) {
+            res.status(403).json({ error: 'You do not have access to the ticket system for this server' });
+            return null;
+        }
+
+        if (options.requireReply && !canReplyTickets) {
+            res.status(403).json({ error: 'You do not have permission to reply in this ticket' });
+            return null;
+        }
+
+        if (options.requireManage && !canManageTickets) {
+            res.status(403).json({ error: 'You do not have permission to manage tickets' });
+            return null;
+        }
+
+        return access;
     }
 
     async verifyAction(req, res) {
@@ -3170,6 +3514,395 @@ ${Object.entries(colors).map(([key, value]) => `    ${key}: ${value};`).join('\n
         return requireGuildAccess(this, opts);
     }
 
+    /**
+     * SECURITY: Enterprise-only guard. Must be chained AFTER _requireGuildAccess
+     * so req.guildId is populated. Verifies the guild has an active Enterprise
+     * plan on the backend, returning 403 for anyone who tries to hit the API
+     * directly without Enterprise. Never trusts the client.
+     */
+    _requireEnterprise() {
+        return async (req, res, next) => {
+            try {
+                const guildId = req.guildId || req.query.guildId || req.body?.guildId || req.headers['x-guild-id'];
+                if (!guildId) {
+                    return res.status(400).json({ error: 'Guild ID required' });
+                }
+                if (!this.bot || typeof this.bot.hasEnterpriseFeatures !== 'function') {
+                    return res.status(503).json({ error: 'Enterprise checks unavailable' });
+                }
+                const isEnterprise = await this.bot.hasEnterpriseFeatures(guildId);
+                if (!isEnterprise) {
+                    return res.status(403).json({
+                        error: 'Multi-Server Moderation requires an Enterprise plan.',
+                        enterprise: true
+                    });
+                }
+                next();
+            } catch (err) {
+                this.bot.logger?.error?.('Enterprise guard error:', err.message || err);
+                return res.status(500).json({ error: 'Failed to verify Enterprise access' });
+            }
+        };
+    }
+
+    /**
+     * Registers all Multi-Server Moderation API routes. Every route is
+     * authenticated, guild-access-guarded (admin/owner), and Enterprise-gated
+     * on the backend. Mutating routes require owner or admin as noted.
+     */
+    setupMultiServerModerationRoutes() {
+        const rehydrateMsmIfNeeded = () => {
+            const service = this.bot?.multiServerModeration;
+            const hasCoreMethods = !!(service && typeof service.getStatusForGuild === 'function');
+            const hasEnterpriseMethods = !!(service && typeof service.addWatchlistEntry === 'function' && typeof service.createAnnouncement === 'function');
+
+            if (hasCoreMethods && hasEnterpriseMethods) return service;
+
+            try {
+                const modulePath = path.join(__dirname, '..', 'security', 'multiServerModeration');
+                delete require.cache[require.resolve(modulePath)];
+                const MultiServerModeration = require(modulePath);
+                this.bot.multiServerModeration = new MultiServerModeration(this.bot);
+                return this.bot.multiServerModeration;
+            } catch (err) {
+                this.bot.logger?.error?.('[MSM] Failed to rehydrate service:', err.message || err);
+                return service || null;
+            }
+        };
+
+        const msm = () => {
+            const service = rehydrateMsmIfNeeded();
+            if (!service || typeof service.getStatusForGuild !== 'function') {
+                throw new Error('Multi-Server Moderation service is unavailable. Please restart the bot.');
+            }
+            return service;
+        };
+        const adminGuard = [this.authenticateToken.bind(this), this._requireGuildAccess({ adminOnly: true }), this._requireEnterprise()];
+        const ownerGuard = [this.authenticateToken.bind(this), this._requireGuildAccess({ ownerOnly: true }), this._requireEnterprise()];
+
+        // Actor helper for audit trails.
+        const actorOf = (req) => ({ id: req.user?.userId, tag: req.user?.username });
+
+        // ── Status (admin) ────────────────────────────────────────────────
+        this.app.get('/api/multi-server/status', ...adminGuard, async (req, res) => {
+            try {
+                const status = await msm().getStatusForGuild(req.guildId);
+                res.json({ ok: true, ...status });
+            } catch (err) {
+                res.status(500).json({ error: err.message || 'Failed to load status' });
+            }
+        });
+
+        // ── Audit log (admin) ─────────────────────────────────────────────
+        this.app.get('/api/multi-server/audit', ...adminGuard, async (req, res) => {
+            try {
+                const link = await msm().getNetworkByGuild(req.guildId);
+                if (!link) return res.json({ ok: true, entries: [] });
+                const entries = await msm().getAuditLog(link.network.id, req.query.limit);
+                res.json({ ok: true, entries });
+            } catch (err) {
+                res.status(500).json({ error: err.message || 'Failed to load audit log' });
+            }
+        });
+
+        // ── Create network (owner only) ───────────────────────────────────
+        this.app.post('/api/multi-server/network', ...ownerGuard, async (req, res) => {
+            try {
+                const ownerUserId = this.bot.client?.guilds?.cache?.get(req.guildId)?.ownerId;
+                if (!ownerUserId) return res.status(400).json({ error: 'Could not resolve server owner.' });
+                const network = await msm().createNetwork(req.guildId, ownerUserId, req.body?.name, actorOf(req));
+                res.json({ ok: true, network });
+            } catch (err) {
+                res.status(400).json({ error: err.message || 'Failed to create network' });
+            }
+        });
+
+        // ── Delete/dissolve network (owner only) ──────────────────────────
+        this.app.delete('/api/multi-server/network', ...ownerGuard, async (req, res) => {
+            try {
+                const link = await msm().getNetworkByGuild(req.guildId);
+                if (!link || link.membership.role !== 'main') {
+                    return res.status(403).json({ error: 'Only the main server can dissolve the network.' });
+                }
+                await msm().deleteNetwork(link.network.id, actorOf(req));
+                res.json({ ok: true });
+            } catch (err) {
+                res.status(400).json({ error: err.message || 'Failed to delete network' });
+            }
+        });
+
+        // ── Request a link to another server (admin, main only) ────────────
+        this.app.post('/api/multi-server/link-request', ...adminGuard, async (req, res) => {
+            try {
+                const link = await msm().getNetworkByGuild(req.guildId);
+                if (!link || link.membership.role !== 'main') {
+                    return res.status(403).json({ error: 'Only the main server can invite others.' });
+                }
+                const targetGuildId = String(req.body?.targetGuildId || '').trim();
+                const result = await msm().requestLink(link.network.id, targetGuildId, actorOf(req));
+                res.json({ ok: true, ...result });
+            } catch (err) {
+                res.status(400).json({ error: err.message || 'Failed to send invitation' });
+            }
+        });
+
+        // ── Cancel a pending link request (admin, main only) ──────────────
+        this.app.post('/api/multi-server/link-cancel', ...adminGuard, async (req, res) => {
+            try {
+                const link = await msm().getNetworkByGuild(req.guildId);
+                if (!link || link.membership.role !== 'main') {
+                    return res.status(403).json({ error: 'Only the main server can manage invitations.' });
+                }
+                const ok = await msm().cancelLinkRequest(Number(req.body?.requestId), link.network.id, actorOf(req));
+                res.json({ ok });
+            } catch (err) {
+                res.status(400).json({ error: err.message || 'Failed to cancel invitation' });
+            }
+        });
+
+        // ── Remove a linked server (admin, main only) ─────────────────────
+        this.app.post('/api/multi-server/remove-member', ...adminGuard, async (req, res) => {
+            try {
+                const link = await msm().getNetworkByGuild(req.guildId);
+                if (!link || link.membership.role !== 'main') {
+                    return res.status(403).json({ error: 'Only the main server can remove members.' });
+                }
+                const targetGuildId = String(req.body?.guildId || '').trim();
+                await msm().removeMember(link.network.id, targetGuildId, actorOf(req));
+                res.json({ ok: true });
+            } catch (err) {
+                res.status(400).json({ error: err.message || 'Failed to remove member' });
+            }
+        });
+
+        // ── Update this server's own sync settings (admin) ────────────────
+        // A server always controls what IT receives/enforces.
+        this.app.post('/api/multi-server/sync-settings', ...adminGuard, async (req, res) => {
+            try {
+                const link = await msm().getNetworkByGuild(req.guildId);
+                if (!link) return res.status(404).json({ error: 'This server is not in a network.' });
+                const updated = await msm().updateSyncSettings(link.network.id, req.guildId, req.body || {}, actorOf(req));
+                res.json({ ok: true, membership: updated });
+            } catch (err) {
+                res.status(400).json({ error: err.message || 'Failed to update settings' });
+            }
+        });
+
+        // ── Exemptions (admin) ────────────────────────────────────────────
+        this.app.post('/api/multi-server/exempt-user', ...adminGuard, async (req, res) => {
+            try {
+                const link = await msm().getNetworkByGuild(req.guildId);
+                if (!link) return res.status(404).json({ error: 'This server is not in a network.' });
+                const scope = req.body?.networkWide ? '*' : req.guildId;
+                await msm().addExemptUser(link.network.id, scope, String(req.body?.userId || '').trim(), req.body?.reason, actorOf(req));
+                res.json({ ok: true });
+            } catch (err) {
+                res.status(400).json({ error: err.message || 'Failed to add exemption' });
+            }
+        });
+
+        this.app.delete('/api/multi-server/exempt-user', ...adminGuard, async (req, res) => {
+            try {
+                const link = await msm().getNetworkByGuild(req.guildId);
+                if (!link) return res.status(404).json({ error: 'This server is not in a network.' });
+                const scope = req.body?.networkWide ? '*' : req.guildId;
+                await msm().removeExemptUser(link.network.id, scope, String(req.body?.userId || '').trim(), actorOf(req));
+                res.json({ ok: true });
+            } catch (err) {
+                res.status(400).json({ error: err.message || 'Failed to remove exemption' });
+            }
+        });
+
+        this.app.post('/api/multi-server/exempt-role', ...adminGuard, async (req, res) => {
+            try {
+                const link = await msm().getNetworkByGuild(req.guildId);
+                if (!link) return res.status(404).json({ error: 'This server is not in a network.' });
+                await msm().addExemptRole(link.network.id, req.guildId, String(req.body?.roleId || '').trim(), req.body?.reason, actorOf(req));
+                res.json({ ok: true });
+            } catch (err) {
+                res.status(400).json({ error: err.message || 'Failed to add role exemption' });
+            }
+        });
+
+        this.app.delete('/api/multi-server/exempt-role', ...adminGuard, async (req, res) => {
+            try {
+                const link = await msm().getNetworkByGuild(req.guildId);
+                if (!link) return res.status(404).json({ error: 'This server is not in a network.' });
+                await msm().removeExemptRole(link.network.id, req.guildId, String(req.body?.roleId || '').trim(), actorOf(req));
+                res.json({ ok: true });
+            } catch (err) {
+                res.status(400).json({ error: err.message || 'Failed to remove role exemption' });
+            }
+        });
+
+        // ── Review queue actions (admin) ──────────────────────────────────
+        this.app.post('/api/multi-server/review/approve', ...adminGuard, async (req, res) => {
+            try {
+                const link = await msm().getNetworkByGuild(req.guildId);
+                if (!link) return res.status(404).json({ error: 'This server is not in a network.' });
+                const outcome = await msm().approveReviewAction(link.network.id, Number(req.body?.actionId), actorOf(req));
+                res.json({ ok: true, outcome });
+            } catch (err) {
+                res.status(400).json({ error: err.message || 'Failed to approve action' });
+            }
+        });
+
+        this.app.post('/api/multi-server/review/deny', ...adminGuard, async (req, res) => {
+            try {
+                const link = await msm().getNetworkByGuild(req.guildId);
+                if (!link) return res.status(404).json({ error: 'This server is not in a network.' });
+                await msm().denyReviewAction(link.network.id, Number(req.body?.actionId), actorOf(req));
+                res.json({ ok: true });
+            } catch (err) {
+                res.status(400).json({ error: err.message || 'Failed to deny action' });
+            }
+        });
+
+        // ── Panic switch (owner only) ─────────────────────────────────────
+        this.app.post('/api/multi-server/panic', ...ownerGuard, async (req, res) => {
+            try {
+                const link = await msm().getNetworkByGuild(req.guildId);
+                if (!link || link.membership.role !== 'main') {
+                    return res.status(403).json({ error: 'Only the main server can toggle the panic switch.' });
+                }
+                await msm().setPanic(link.network.id, !!req.body?.disabled, req.body?.reason, actorOf(req));
+                res.json({ ok: true, disabled: !!req.body?.disabled });
+            } catch (err) {
+                res.status(400).json({ error: err.message || 'Failed to toggle panic switch' });
+            }
+        });
+
+        // ── Network settings / defaults (owner only, main server) ─────────
+        this.app.post('/api/multi-server/network-settings', ...ownerGuard, async (req, res) => {
+            try {
+                const link = await msm().getNetworkByGuild(req.guildId);
+                if (!link || link.membership.role !== 'main') {
+                    return res.status(403).json({ error: 'Only the main server can change network settings.' });
+                }
+                const network = await msm().updateNetworkSettings(link.network.id, req.body || {}, actorOf(req));
+                res.json({ ok: true, network });
+            } catch (err) {
+                res.status(400).json({ error: err.message || 'Failed to update network settings' });
+            }
+        });
+
+        // ── Per-server pause (admin) ──────────────────────────────────────
+        // A joined server may pause its own incoming/outgoing sync at any time.
+        this.app.post('/api/multi-server/server-pause', ...adminGuard, async (req, res) => {
+            try {
+                const link = await msm().getNetworkByGuild(req.guildId);
+                if (!link) return res.status(404).json({ error: 'This server is not in a network.' });
+                const updated = await msm().setServerPause(link.network.id, req.guildId, {
+                    paused_in: !!req.body?.paused_in,
+                    paused_out: !!req.body?.paused_out
+                }, actorOf(req));
+                res.json({ ok: true, membership: updated });
+            } catch (err) {
+                res.status(400).json({ error: err.message || 'Failed to update server pause' });
+            }
+        });
+
+        // ── Announcements ─────────────────────────────────────────────────
+        // List (admin): main sees delivery summaries, members see their state.
+        this.app.get('/api/multi-server/announcements', ...adminGuard, async (req, res) => {
+            try {
+                const link = await msm().getNetworkByGuild(req.guildId);
+                if (!link) return res.json({ ok: true, announcements: [] });
+                const isMain = link.membership.role === 'main';
+                const announcements = await msm().listAnnouncements(link.network.id, req.guildId, isMain, req.query.limit);
+                res.json({ ok: true, announcements });
+            } catch (err) {
+                res.status(500).json({ error: err.message || 'Failed to load announcements' });
+            }
+        });
+
+        // Publish (admin, main only).
+        this.app.post('/api/multi-server/announcements', ...adminGuard, async (req, res) => {
+            try {
+                const link = await msm().getNetworkByGuild(req.guildId);
+                if (!link || link.membership.role !== 'main') {
+                    return res.status(403).json({ error: 'Only the main server can publish announcements.' });
+                }
+                const result = await msm().createAnnouncement(link.network.id, req.guildId, {
+                    type: req.body?.type,
+                    urgency: req.body?.urgency,
+                    title: req.body?.title,
+                    body: req.body?.body
+                }, actorOf(req));
+                res.json({ ok: true, ...result });
+            } catch (err) {
+                res.status(400).json({ error: err.message || 'Failed to publish announcement' });
+            }
+        });
+
+        // Approve delivery to THIS server (admin).
+        this.app.post('/api/multi-server/announcements/approve', ...adminGuard, async (req, res) => {
+            try {
+                const link = await msm().getNetworkByGuild(req.guildId);
+                if (!link) return res.status(404).json({ error: 'This server is not in a network.' });
+                const outcome = await msm().approveAnnouncementDelivery(link.network.id, req.guildId, Number(req.body?.announcementId), actorOf(req));
+                res.json({ ok: true, outcome });
+            } catch (err) {
+                res.status(400).json({ error: err.message || 'Failed to approve announcement' });
+            }
+        });
+
+        // Deny delivery to THIS server (admin).
+        this.app.post('/api/multi-server/announcements/deny', ...adminGuard, async (req, res) => {
+            try {
+                const link = await msm().getNetworkByGuild(req.guildId);
+                if (!link) return res.status(404).json({ error: 'This server is not in a network.' });
+                const result = await msm().denyAnnouncementDelivery(link.network.id, req.guildId, Number(req.body?.announcementId), actorOf(req));
+                res.json({ ok: true, ...result });
+            } catch (err) {
+                res.status(400).json({ error: err.message || 'Failed to deny announcement' });
+            }
+        });
+
+        // ── Shared watchlist ──────────────────────────────────────────────
+        this.app.get('/api/multi-server/watchlist', ...adminGuard, async (req, res) => {
+            try {
+                const link = await msm().getNetworkByGuild(req.guildId);
+                if (!link) return res.json({ ok: true, watchlist: [] });
+                const watchlist = await msm().listWatchlist(link.network.id, { limit: req.query.limit });
+                res.json({ ok: true, watchlist });
+            } catch (err) {
+                res.status(500).json({ error: err.message || 'Failed to load watchlist' });
+            }
+        });
+
+        // Add an entry (admin). Sourced from THIS server.
+        this.app.post('/api/multi-server/watchlist', ...adminGuard, async (req, res) => {
+            try {
+                const link = await msm().getNetworkByGuild(req.guildId);
+                if (!link) return res.status(404).json({ error: 'This server is not in a network.' });
+                const result = await msm().addWatchlistEntry(link.network.id, req.guildId, {
+                    userId: String(req.body?.userId || '').trim(),
+                    reason: req.body?.reason,
+                    severity: req.body?.severity,
+                    evidence: req.body?.evidence,
+                    actionMode: req.body?.actionMode,
+                    expiresAt: req.body?.expiresAt
+                }, actorOf(req));
+                res.json({ ok: true, ...result });
+            } catch (err) {
+                res.status(400).json({ error: err.message || 'Failed to add watchlist entry' });
+            }
+        });
+
+        // Remove an entry (admin). Only the source server or main can remove.
+        this.app.delete('/api/multi-server/watchlist', ...adminGuard, async (req, res) => {
+            try {
+                const link = await msm().getNetworkByGuild(req.guildId);
+                if (!link) return res.status(404).json({ error: 'This server is not in a network.' });
+                const result = await msm().removeWatchlistEntry(link.network.id, req.guildId, String(req.body?.userId || '').trim(), actorOf(req));
+                res.json({ ok: true, ...result });
+            } catch (err) {
+                res.status(400).json({ error: err.message || 'Failed to remove watchlist entry' });
+            }
+        });
+    }
+
     async authenticateToken(req, res, next) {
         // SECURITY FIX: Explicit public route allowlist instead of broad prefix skips.
         // Admin v3/v4 routes have their OWN auth.
@@ -3212,7 +3945,10 @@ ${Object.entries(colors).map(([key, value]) => `    ${key}: ${value};`).join('\n
             req.user = decoded;
             if (!req.user.plan) req.user.plan = 'free';
             if (typeof req.user.isPremium !== 'boolean') {
-                req.user.isPremium = req.user.plan === 'premium' || req.user.role === 'owner';
+                req.user.isPremium = ['pro', 'enterprise', 'premium'].includes(req.user.plan) || req.user.role === 'owner';
+            }
+            if (typeof req.user.isEnterprise !== 'boolean') {
+                req.user.isEnterprise = req.user.plan === 'enterprise' || req.user.role === 'owner';
             }
             next();
         } catch (error) {
@@ -7248,6 +7984,9 @@ ${Object.entries(colors).map(([key, value]) => `    ${key}: ${value};`).join('\n
                 return res.json({ tickets: [], count: 0 });
             }
 
+            const ticketAccess = await this.requireTicketPermission(req, res, { guildId: guild.id });
+            if (!ticketAccess) return;
+
             const limit = parseInt(req.query.limit) || 100;
             const status = req.query.status;
             
@@ -7306,6 +8045,9 @@ ${Object.entries(colors).map(([key, value]) => `    ${key}: ${value};`).join('\n
                 return res.json([]);
             }
 
+            const ticketAccess = await this.requireTicketPermission(req, res, { guildId: guild.id });
+            if (!ticketAccess) return;
+
             const { status, limit = 50 } = req.query;
             
             let query = `
@@ -7354,7 +8096,7 @@ ${Object.entries(colors).map(([key, value]) => `    ${key}: ${value};`).join('\n
                     userAvatar: userAvatar,
                     status: ticket.status || 'open',
                     priority: ticket.priority || 'normal',
-                    category: ticket.username || 'General',
+                    category: ticket.category || 'general',
                     subject: ticket.subject || 'Support Ticket',
                     description: ticket.description || 'No description provided',
                     created: this.formatTimeAgo(new Date(ticket.created_at)),
@@ -7374,6 +8116,12 @@ ${Object.entries(colors).map(([key, value]) => `    ${key}: ${value};`).join('\n
     async closeTicketAPI(req, res) {
         try {
             const ticketId = req.params.id.replace('ticket-', '');
+
+            const ticketAccess = await this.requireTicketPermission(req, res, {
+                ticketId,
+                requireManage: true,
+            });
+            if (!ticketAccess) return;
             
             if (this.bot.database) {
                 // Update ticket status in both old tables
@@ -7407,6 +8155,12 @@ ${Object.entries(colors).map(([key, value]) => `    ${key}: ${value};`).join('\n
     async reopenTicketAPI(req, res) {
         try {
             const ticketId = req.params.id.replace('ticket-', '');
+
+            const ticketAccess = await this.requireTicketPermission(req, res, {
+                ticketId,
+                requireManage: true,
+            });
+            if (!ticketAccess) return;
 
             if (this.bot.database) {
                 await this.bot.database.run(`
@@ -7451,6 +8205,12 @@ ${Object.entries(colors).map(([key, value]) => `    ${key}: ${value};`).join('\n
                 return res.status(404).json({ error: 'Ticket not found' });
             }
 
+            const ticketAccess = await this.requireTicketPermission(req, res, {
+                ticketId,
+                guildId: ticket.guild_id || null,
+            });
+            if (!ticketAccess) return;
+
             // Fetch user details
             let user = null;
             try {
@@ -7464,7 +8224,7 @@ ${Object.entries(colors).map(([key, value]) => `    ${key}: ${value};`).join('\n
                 userId: ticket.user_id,
                 username: user ? user.username : (ticket.user || 'Unknown User'),
                 userAvatar: user ? user.displayAvatarURL({ dynamic: true }) : '/images/default-avatar.png',
-                category: ticket.category || ticket.username || 'General',
+                category: ticket.category || 'general',
                 subject: ticket.subject || ticket.problem || 'Support Ticket',
                 description: ticket.description || ticket.details || 'No description provided',
                 status: ticket.status || 'open',
@@ -7484,7 +8244,10 @@ ${Object.entries(colors).map(([key, value]) => `    ${key}: ${value};`).join('\n
 
     async getTicketMessages(req, res) {
         try {
-            const ticketId = req.params.id.replace('ticket-', '');
+            const ticketId = String(req.params.id || '').replace('ticket-', '');
+
+            const ticketAccess = await this.requireTicketPermission(req, res, { ticketId });
+            if (!ticketAccess) return;
 
             // DM tickets: fetch stored messages
             const dmTicket = await this.bot.database.get('SELECT id FROM dm_tickets WHERE id = ?', [ticketId]);
@@ -7493,14 +8256,73 @@ ${Object.entries(colors).map(([key, value]) => `    ${key}: ${value};`).join('\n
                 return res.json(messages.map(msg => ({
                     id: msg.id,
                     userId: msg.user_id,
-                    username: msg.username,
+                    username: msg.username || msg.user_id || 'Unknown',
+                    author: msg.username || msg.user_id || 'Unknown',
                     message: msg.message,
+                    content: msg.message,
                     isStaff: msg.is_staff === 1,
-                    createdAt: msg.created_at
+                    createdAt: msg.created_at,
+                    timestamp: msg.created_at
                 })));
             }
 
-            // Channel-based tickets: no stored transcript yet Ã¢â‚¬â€ return empty list instead of error
+            // Channel/help tickets: fetch persisted thread messages where available.
+            const ticketRow = await this.bot.database.get(
+                'SELECT id, ticket_id FROM tickets WHERE id = ? OR ticket_id = ? LIMIT 1',
+                [ticketId, ticketId]
+            ).catch(() => null);
+
+            const candidateIds = [...new Set([
+                ticketId,
+                ticketRow?.id ? String(ticketRow.id) : null,
+                ticketRow?.ticket_id ? String(ticketRow.ticket_id) : null,
+            ].filter(Boolean))];
+
+            if (candidateIds.length) {
+                const placeholders = candidateIds.map(() => '?').join(',');
+
+                let messages = await this.bot.database.all(
+                    `SELECT *
+                     FROM ticket_messages
+                     WHERE ticket_id IN (${placeholders})
+                     ORDER BY datetime(created_at) ASC, id ASC`,
+                    candidateIds
+                ).catch(() => []);
+
+                if (!messages.length) {
+                    messages = await this.bot.database.all(
+                        `SELECT *
+                         FROM help_ticket_messages
+                         WHERE ticket_id IN (${placeholders})
+                         ORDER BY datetime(created_at) ASC, id ASC`,
+                        candidateIds
+                    ).catch(() => []);
+                }
+
+                if (messages.length) {
+                    return res.json(messages.map(msg => {
+                        const author = msg.author || msg.username || msg.user_id || 'Unknown';
+                        const timestamp = msg.created_at || new Date().toISOString();
+                        const content = msg.content || msg.message || '';
+                        const isStaff = msg.is_staff === 1 || msg.is_admin === 1 || msg.is_admin === 2;
+
+                        return {
+                            id: msg.id,
+                            ticketId: msg.ticket_id,
+                            userId: msg.user_id,
+                            username: author,
+                            author,
+                            message: content,
+                            content,
+                            isStaff,
+                            createdAt: timestamp,
+                            timestamp,
+                        };
+                    }));
+                }
+            }
+
+            // No stored messages for this ticket yet.
             return res.json([]);
         } catch (error) {
             this.bot.logger.error('Error getting ticket messages:', error);
@@ -7543,6 +8365,12 @@ ${Object.entries(colors).map(([key, value]) => `    ${key}: ${value};`).join('\n
         try {
             const ticketId = req.params.id.replace('ticket-', '');
             const { staffId } = req.body;
+
+            const ticketAccess = await this.requireTicketPermission(req, res, {
+                ticketId,
+                requireManage: true,
+            });
+            if (!ticketAccess) return;
 
             if (!staffId) {
                 return res.status(400).json({ error: 'Staff ID required' });
@@ -7612,6 +8440,12 @@ ${Object.entries(colors).map(([key, value]) => `    ${key}: ${value};`).join('\n
             const ticketId = req.params.id.replace('ticket-', '');
             const { status } = req.body;
 
+            const ticketAccess = await this.requireTicketPermission(req, res, {
+                ticketId,
+                requireManage: true,
+            });
+            if (!ticketAccess) return;
+
             if (!status) {
                 return res.status(400).json({ error: 'Status required' });
             }
@@ -7668,6 +8502,12 @@ ${Object.entries(colors).map(([key, value]) => `    ${key}: ${value};`).join('\n
             const ticketId = req.params.id.replace('ticket-', '');
             const { priority } = req.body;
 
+            const ticketAccess = await this.requireTicketPermission(req, res, {
+                ticketId,
+                requireManage: true,
+            });
+            if (!ticketAccess) return;
+
             if (!priority) {
                 return res.status(400).json({ error: 'Priority required' });
             }
@@ -7704,11 +8544,92 @@ ${Object.entries(colors).map(([key, value]) => `    ${key}: ${value};`).join('\n
         }
     }
 
+    async updateTicketCategory(req, res) {
+        try {
+            const ticketId = req.params.id.replace('ticket-', '');
+            const raw = String(req.body?.category || '').trim().toLowerCase();
+
+            const ticketAccess = await this.requireTicketPermission(req, res, {
+                ticketId,
+                requireManage: true,
+            });
+            if (!ticketAccess) return;
+
+            if (!raw) {
+                return res.status(400).json({ error: 'Category required' });
+            }
+
+            const allowed = ['general', 'support', 'billing', 'bug', 'report'];
+            if (!allowed.includes(raw)) {
+                return res.status(400).json({ error: 'Invalid category' });
+            }
+            const category = raw;
+
+            const ensureCategoryColumn = async (table) => {
+                try {
+                    const columns = await this.bot.database.all(`PRAGMA table_info(${table})`);
+                    const hasCategory = Array.isArray(columns) && columns.some(col => col.name === 'category');
+                    if (!hasCategory) {
+                        await this.bot.database.run(`ALTER TABLE ${table} ADD COLUMN category TEXT`);
+                    }
+                } catch (e) {
+                    // table may not exist in this deployment
+                }
+            };
+
+            await ensureCategoryColumn('tickets');
+            await ensureCategoryColumn('dm_tickets');
+
+            let updated = 0;
+
+            try {
+                const result = await this.bot.database.run(
+                    `UPDATE tickets SET category = ? WHERE id = ?`,
+                    [category, ticketId]
+                );
+                updated += Number(result?.changes || 0);
+            } catch (e) {
+                // tickets row might not exist for this id
+            }
+
+            try {
+                const result = await this.bot.database.run(
+                    `UPDATE dm_tickets SET category = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+                    [category, ticketId]
+                );
+                updated += Number(result?.changes || 0);
+            } catch (e) {
+                // dm_tickets row/table might not exist or lack category column
+            }
+
+            if (updated === 0) {
+                return res.status(404).json({ error: 'Ticket not found' });
+            }
+
+            await this.addTicketHistoryEntry(
+                ticketId,
+                req.user?.username || 'Staff',
+                `Changed category to ${category}`
+            );
+
+            res.json({ success: true, message: 'Category updated successfully', category });
+        } catch (error) {
+            this.bot.logger.error('Error updating ticket category:', error);
+            res.status(500).json({ error: 'Failed to update category', details: error.message });
+        }
+    }
+
     async claimTicket(req, res) {
         try {
             const ticketId = req.params.id.replace('ticket-', '');
             const staffId = req.user?.id || 'staff-unknown';
             const staffName = req.user?.username || 'Staff Member';
+
+            const ticketAccess = await this.requireTicketPermission(req, res, {
+                ticketId,
+                requireManage: true,
+            });
+            if (!ticketAccess) return;
 
             // Update tickets table
             try {
@@ -7772,6 +8693,12 @@ ${Object.entries(colors).map(([key, value]) => `    ${key}: ${value};`).join('\n
             const ticketId = req.params.id.replace('ticket-', '');
             const { note } = req.body;
 
+            const ticketAccess = await this.requireTicketPermission(req, res, {
+                ticketId,
+                requireReply: true,
+            });
+            if (!ticketAccess) return;
+
             if (!note) {
                 return res.status(400).json({ error: 'Note required' });
             }
@@ -7809,6 +8736,12 @@ ${Object.entries(colors).map(([key, value]) => `    ${key}: ${value};`).join('\n
         try {
             const ticketId = req.params.id.replace('ticket-', '');
 
+            const ticketAccess = await this.requireTicketPermission(req, res, {
+                ticketId,
+                requireReply: true,
+            });
+            if (!ticketAccess) return;
+
             const notes = await this.bot.database.all(`
                 SELECT * FROM ticket_notes WHERE ticket_id = ? ORDER BY created_at DESC
             `, [ticketId]);
@@ -7823,6 +8756,9 @@ ${Object.entries(colors).map(([key, value]) => `    ${key}: ${value};`).join('\n
     async getTicketHistory(req, res) {
         try {
             const ticketId = req.params.id.replace('ticket-', '');
+
+            const ticketAccess = await this.requireTicketPermission(req, res, { ticketId });
+            if (!ticketAccess) return;
 
             // Create history table if not exists
             await this.bot.database.run(`
@@ -7873,6 +8809,12 @@ ${Object.entries(colors).map(([key, value]) => `    ${key}: ${value};`).join('\n
             if (!guild) {
                 return res.json([]);
             }
+
+            const ticketAccess = await this.requireTicketPermission(req, res, {
+                guildId: guild.id,
+                requireManage: true,
+            });
+            if (!ticketAccess) return;
 
             // Fetch all members with moderation permissions
             const staffMembers = [];
@@ -10076,7 +11018,16 @@ ${Object.entries(colors).map(([key, value]) => `    ${key}: ${value};`).join('\n
                 timestamp_format: notifSettings.timestamp_format || 'long',
                 audit_retention: notifSettings.audit_retention || 30,
                 log_show_avatars: !!(notifSettings.log_show_avatars ?? true),
-                log_show_content: !!(notifSettings.log_show_content ?? true)
+                log_show_content: !!(notifSettings.log_show_content ?? true),
+
+                // Premium: Custom moderation log cards (Pro/Enterprise)
+                custom_log_cards: notifSettings.custom_log_cards || {
+                    enabled: false,
+                    ban: { title: '', icon: '🔨', color: '#e74c3c' },
+                    kick: { title: '', icon: '👢', color: '#e67e22' },
+                    timeout: { title: '', icon: '🔇', color: '#f39c12' },
+                    warn: { title: '', icon: '⚠️', color: '#f1c40f' }
+                }
             });
         } catch (error) {
             this.bot.logger?.error('Error getting notification settings:', error);
@@ -10152,6 +11103,64 @@ ${Object.entries(colors).map(([key, value]) => `    ${key}: ${value};`).join('\n
                 if (existingRow?.notification_settings) existingNotif = JSON.parse(existingRow.notification_settings);
             } catch (e) { /* ignore */ }
 
+            const cleanHex = (value, fallback) => {
+                const val = String(value || '').trim();
+                return /^#[0-9a-fA-F]{6}$/.test(val) ? val : fallback;
+            };
+            const cleanTitle = (value) => String(value || '').trim().substring(0, 80);
+            const cleanIcon = (value, fallback) => {
+                const val = String(value || '').trim();
+                if (!val) return fallback;
+                return Array.from(val).slice(0, 2).join('');
+            };
+
+            const baseCards = {
+                enabled: false,
+                ban: { title: '', icon: '🔨', color: '#e74c3c' },
+                kick: { title: '', icon: '👢', color: '#e67e22' },
+                timeout: { title: '', icon: '🔇', color: '#f39c12' },
+                warn: { title: '', icon: '⚠️', color: '#f1c40f' }
+            };
+            const currentCards = (existingNotif && typeof existingNotif.custom_log_cards === 'object' && existingNotif.custom_log_cards)
+                ? { ...baseCards, ...existingNotif.custom_log_cards }
+                : baseCards;
+
+            const incomingCards = (s.custom_log_cards && typeof s.custom_log_cards === 'object')
+                ? s.custom_log_cards
+                : {};
+
+            const normalizedIncomingCards = {
+                enabled: !!incomingCards.enabled,
+                ban: {
+                    title: cleanTitle(incomingCards?.ban?.title),
+                    icon: cleanIcon(incomingCards?.ban?.icon, '🔨'),
+                    color: cleanHex(incomingCards?.ban?.color, '#e74c3c')
+                },
+                kick: {
+                    title: cleanTitle(incomingCards?.kick?.title),
+                    icon: cleanIcon(incomingCards?.kick?.icon, '👢'),
+                    color: cleanHex(incomingCards?.kick?.color, '#e67e22')
+                },
+                timeout: {
+                    title: cleanTitle(incomingCards?.timeout?.title),
+                    icon: cleanIcon(incomingCards?.timeout?.icon, '🔇'),
+                    color: cleanHex(incomingCards?.timeout?.color, '#f39c12')
+                },
+                warn: {
+                    title: cleanTitle(incomingCards?.warn?.title),
+                    icon: cleanIcon(incomingCards?.warn?.icon, '⚠️'),
+                    color: cleanHex(incomingCards?.warn?.color, '#f1c40f')
+                }
+            };
+
+            let entitlement = { plan: 'free', isPremium: false, isEnterprise: false };
+            try {
+                entitlement = await this.getUserPlan(req.user?.userId);
+            } catch (e) { /* default free */ }
+            const plan = String(entitlement?.plan || 'free').toLowerCase();
+            const canCustomizeCards = plan === 'pro' || plan === 'enterprise';
+            const effectiveCustomCards = canCustomizeCards ? normalizedIncomingCards : currentCards;
+
             // ── Premium settings (stored as JSON blob) ──
             const premiumSettings = {
                 // Basic notification toggles (free but stored here for simplicity)
@@ -10205,7 +11214,10 @@ ${Object.entries(colors).map(([key, value]) => `    ${key}: ${value};`).join('\n
                 timestamp_format: s.timestamp_format || 'long',
                 audit_retention: s.audit_retention || 30,
                 log_show_avatars: s.log_show_avatars !== false,
-                log_show_content: s.log_show_content !== false
+                log_show_content: s.log_show_content !== false,
+
+                // Custom moderation log cards (Pro/Enterprise only)
+                custom_log_cards: effectiveCustomCards
             };
 
             // Store premium settings as JSON blob in notification_settings column
@@ -10226,6 +11238,13 @@ ${Object.entries(colors).map(([key, value]) => `    ${key}: ${value};`).join('\n
                 if (this.bot.discordLogger) this.bot.discordLogger.invalidateCache(guild.id);
             } catch (e) { /* ignore */ }
 
+            // Invalidate notification alert cache used by runtime logger integrations.
+            try {
+                if (this.bot.logger && typeof this.bot.logger.invalidateNotificationCache === 'function') {
+                    this.bot.logger.invalidateNotificationCache(guild.id);
+                }
+            } catch (e) { /* ignore */ }
+
             this.bot.logger?.info(`Notification settings updated for guild ${guild.id}`);
             res.json({ success: true, message: 'Notification settings saved successfully' });
         } catch (error) {
@@ -10238,11 +11257,10 @@ ${Object.entries(colors).map(([key, value]) => `    ${key}: ${value};`).join('\n
         try {
             const { email, guildId } = req.body;
             if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-                return res.status(400).json({ error: 'Invalid email address' });
+                return res.status(400).json({ error: 'Invalid email address', message: 'Invalid email address' });
             }
 
-            const token = require('crypto').randomBytes(32).toString('hex');
-            const expires = Date.now() + 24 * 60 * 60 * 1000; // 24h
+            const normalizedEmail = String(email).trim().toLowerCase();
 
             // Store pending verification token in DB
             const guild = guildId ? this.bot.client.guilds.cache.get(guildId) : this.bot.client.guilds.cache.first();
@@ -10253,6 +11271,27 @@ ${Object.entries(colors).map(([key, value]) => `    ${key}: ${value};`).join('\n
             const existing = await this.bot.database.get('SELECT notification_settings FROM guild_configs WHERE guild_id = ?', [guild.id]);
             let notifSettings = {};
             try { if (existing?.notification_settings) notifSettings = JSON.parse(existing.notification_settings); } catch (e) {}
+
+            const currentVerified = String(notifSettings.email_address || '').trim().toLowerCase();
+            if (notifSettings.email_verified && currentVerified && currentVerified === normalizedEmail) {
+                return res.json({ success: true, message: 'Email is already verified for this server.' });
+            }
+
+            let token = null;
+            let expires = null;
+            const existingToken = String(notifSettings.email_verify_token || '').trim();
+            const existingExpiry = Number(notifSettings.email_verify_expires || 0);
+            const existingPending = String(notifSettings.email_pending || notifSettings.email_address || '').trim().toLowerCase();
+            const canReuse = !!existingToken && existingExpiry > Date.now() && existingPending === normalizedEmail;
+
+            if (canReuse) {
+                token = existingToken;
+                expires = existingExpiry;
+            } else {
+                token = require('crypto').randomBytes(32).toString('hex');
+                expires = Date.now() + 24 * 60 * 60 * 1000; // 24h
+            }
+
             notifSettings.email_pending = email;
             notifSettings.email_verify_token = token;
             notifSettings.email_verify_expires = expires;
@@ -10263,32 +11302,32 @@ ${Object.entries(colors).map(([key, value]) => `    ${key}: ${value};`).join('\n
                 [JSON.stringify(notifSettings), guild.id]
             );
 
-            // Send verification email via nodemailer
-            const nodemailer = require('nodemailer');
-            const smtpHost = process.env.EMAIL_HOST || process.env.SMTP_HOST;
-            if (!smtpHost) {
-                this.bot.logger?.warn('[Email] No SMTP host configured (EMAIL_HOST). Skipping send.');
-                return res.status(503).json({ error: 'Email service not configured. Set EMAIL_HOST, EMAIL_USER, EMAIL_PASS, EMAIL_FROM in .env' });
-            }
-
-            const transporter = nodemailer.createTransport({
-                host: smtpHost,
-                port: parseInt(process.env.EMAIL_PORT || '587'),
-                secure: process.env.EMAIL_SECURE === 'true',
-                auth: {
-                    user: process.env.EMAIL_USER,
-                    pass: process.env.EMAIL_PASS
+            try {
+                if (this.bot.logger && typeof this.bot.logger.invalidateNotificationCache === 'function') {
+                    this.bot.logger.invalidateNotificationCache(guild.id);
                 }
-            });
+            } catch (e) { /* ignore */ }
+
+            // Send verification email with compatibility for both utility shapes:
+            // - module.exports = { sendEmail }
+            // - module.exports = new EmailService() (legacy singleton)
+            const emailUtil = require('../utils/email');
+            const smtpHost = process.env.EMAIL_HOST || process.env.SMTP_HOST;
+            const smtpUser = process.env.EMAIL_USER || process.env.SMTP_USER;
+            const smtpPass = process.env.EMAIL_PASS || process.env.SMTP_PASS;
+            if (!smtpHost || !smtpUser || !smtpPass) {
+                this.bot.logger?.warn('[Email] SMTP credentials are not configured.');
+                return res.status(503).json({
+                    error: 'Email service not configured. Set EMAIL_HOST/SMTP_HOST, EMAIL_USER/SMTP_USER, EMAIL_PASS/SMTP_PASS, and EMAIL_FROM in .env',
+                    message: 'Email service not configured. Set SMTP credentials in environment variables.'
+                });
+            }
 
             const confirmUrl = `${process.env.DOMAIN || 'https://admin.darklock.net'}/confirm-email?token=${token}&guildId=${guild.id}`;
             const fromAddr = process.env.EMAIL_FROM || 'alerts@darklock.net';
 
-            await transporter.sendMail({
-                from: `"DarkLock Alerts" <${fromAddr}>`,
-                to: email,
-                subject: 'Verify your DarkLock notification email',
-                html: `
+            const subject = 'Verify your DarkLock notification email';
+            const html = `
                     <div style="font-family:Inter,sans-serif;max-width:480px;margin:0 auto;background:#0d0d1a;color:#e2e8f0;padding:32px;border-radius:12px;">
                         <div style="margin-bottom:24px;">
                             <span style="font-size:24px;">🔒</span>
@@ -10300,14 +11339,62 @@ ${Object.entries(colors).map(([key, value]) => `    ${key}: ${value};`).join('\n
                         <p style="font-size:12px;color:#475569;margin:24px 0 0 0;">This link expires in 24 hours. If you didn't request this, ignore this email.</p>
                         <p style="font-size:12px;color:#334155;margin:8px 0 0 0;">Or copy this link: ${confirmUrl}</p>
                     </div>
-                `
-            });
+                `;
+            const text = [
+                'DarkLock Email Verification',
+                '',
+                'You requested email notifications for your Discord server.',
+                'Use this link to verify your address:',
+                confirmUrl,
+                '',
+                'This link expires in 24 hours.'
+            ].join('\n');
+
+            let delivered = false;
+
+            if (emailUtil && typeof emailUtil.sendEmail === 'function') {
+                const result = await emailUtil.sendEmail({
+                    from: `"DarkLock Alerts" <${fromAddr}>`,
+                    to: email,
+                    subject,
+                    text,
+                    html
+                });
+                delivered = typeof result === 'boolean' ? result : !!result?.success;
+            } else {
+                // Fallback path for legacy EmailService export shape.
+                const nodemailer = require('nodemailer');
+                const transporter = nodemailer.createTransport({
+                    host: smtpHost,
+                    port: parseInt(process.env.EMAIL_PORT || process.env.SMTP_PORT || '587', 10),
+                    secure: (process.env.EMAIL_SECURE === 'true' || process.env.SMTP_SECURE === 'true' || String(process.env.EMAIL_PORT || process.env.SMTP_PORT || '587') === '465'),
+                    auth: { user: smtpUser, pass: smtpPass }
+                });
+                await transporter.sendMail({
+                    from: `"DarkLock Alerts" <${fromAddr}>`,
+                    to: email,
+                    subject,
+                    text,
+                    html
+                });
+                delivered = true;
+            }
+
+            if (!delivered) {
+                return res.status(500).json({
+                    error: 'Failed to send verification email via configured SMTP transport.',
+                    message: 'Failed to send verification email via SMTP. Check SMTP credentials and sender/domain settings.'
+                });
+            }
 
             this.bot.logger?.info(`[Email] Verification email sent to ${email} for guild ${guild.id}`);
             res.json({ success: true, message: 'Verification email sent! Check your inbox.' });
         } catch (error) {
             this.bot.logger?.error('Error sending verification email:', error);
-            res.status(500).json({ error: 'Failed to send verification email: ' + error.message });
+            res.status(500).json({
+                error: 'Failed to send verification email: ' + (error?.message || 'Unknown error'),
+                message: 'Failed to send verification email: ' + (error?.message || 'Unknown error')
+            });
         }
     }
 
@@ -10367,6 +11454,12 @@ ${Object.entries(colors).map(([key, value]) => `    ${key}: ${value};`).join('\n
                 'UPDATE guild_configs SET notification_settings = ?, updated_at = CURRENT_TIMESTAMP WHERE guild_id = ?',
                 [JSON.stringify(notifSettings), guildId]
             );
+
+            try {
+                if (this.bot.logger && typeof this.bot.logger.invalidateNotificationCache === 'function') {
+                    this.bot.logger.invalidateNotificationCache(guildId);
+                }
+            } catch (e) { /* ignore */ }
 
             this.bot.logger?.info(`[Email] Email verified for guild ${guildId}: ${verifiedAddr}`);
             return _sendPage(res, 200, {
@@ -11660,6 +12753,61 @@ ${Object.entries(colors).map(([key, value]) => `    ${key}: ${value};`).join('\n
                 roleAccessMap.get(row.guild_id).push(row.role_id);
             });
 
+            const normalizeTier = (tier) => {
+                const normalized = String(tier || 'free').toLowerCase();
+                return ['free', 'pro', 'enterprise'].includes(normalized) ? normalized : 'free';
+            };
+
+            const now = Math.floor(Date.now() / 1000);
+            let userHasEnterprise = false;
+            try {
+                const enterpriseRow = await this.bot.database.get(
+                    `SELECT ss.subscription_id
+                     FROM stripe_subscriptions ss
+                     LEFT JOIN users u ON (u.id = ss.user_id OR u.email = ss.customer_email)
+                     WHERE (ss.user_id = ? OR u.discord_id = ? OR u.id = ?)
+                       AND ss.plan_type = 'enterprise'
+                       AND ss.status IN ('active', 'trialing')
+                       AND (ss.current_period_end IS NULL OR ss.current_period_end > ?)
+                     LIMIT 1`,
+                    [userId, userId, userId, now]
+                );
+                userHasEnterprise = Boolean(enterpriseRow);
+            } catch (entErr) {
+                this.bot.logger.debug(`[SERVERS] User enterprise lookup failed for ${userId}:`, entErr.message || entErr);
+            }
+
+            const resolveServerPlan = async (guildId) => {
+                if (userHasEnterprise) {
+                    return {
+                        planTier: 'enterprise',
+                        planTag: 'Enterprise',
+                        planActive: true,
+                        planSource: 'user_enterprise'
+                    };
+                }
+
+                try {
+                    if (typeof this.bot.getGuildPlan !== 'function') {
+                        return { planTier: 'free', planTag: null, planActive: false, planSource: 'none' };
+                    }
+
+                    const subscription = await this.bot.getGuildPlan(guildId);
+                    const active = Boolean(subscription?.is_active);
+                    const tier = normalizeTier(active ? (subscription.effectivePlan || subscription.plan) : 'free');
+
+                    return {
+                        planTier: tier,
+                        planTag: tier === 'enterprise' ? 'Enterprise' : (tier === 'pro' ? 'Pro' : null),
+                        planActive: tier !== 'free',
+                        planSource: tier === 'enterprise' && subscription?.plan !== 'enterprise' ? 'owner_enterprise' : 'guild'
+                    };
+                } catch (planErr) {
+                    this.bot.logger.debug(`[SERVERS] Failed to resolve plan for guild ${guildId}:`, planErr.message || planErr);
+                    return { planTier: 'free', planTag: null, planActive: false, planSource: 'error' };
+                }
+            };
+
             // Process bot guilds and check authorization
             for (const [guildId, guild] of botGuilds) {
                 try {
@@ -11746,6 +12894,7 @@ ${Object.entries(colors).map(([key, value]) => `    ${key}: ${value};`).join('\n
                     }
 
                     if (hasAccess) {
+                        const planMeta = await resolveServerPlan(guild.id);
                         userServers.push({
                             id: guild.id,
                             name: guild.name,
@@ -11755,12 +12904,14 @@ ${Object.entries(colors).map(([key, value]) => `    ${key}: ${value};`).join('\n
                             hasBot: true,
                             isAdmin: isAdmin,
                             canManage: isAdmin,
-                            accessType: accessReason
+                            accessType: accessReason,
+                            ...planMeta
                         });
 
                         this.bot.logger.debug(`[SERVERS] User ${userId} has access to ${guild.name} (${accessReason})`);
                     } else if (grantedGuildIds.has(guildId)) {
                         // User has explicit grant but is not a member - still show it
+                        const planMeta = await resolveServerPlan(guild.id);
                         userServers.push({
                             id: guild.id,
                             name: guild.name,
@@ -11771,7 +12922,8 @@ ${Object.entries(colors).map(([key, value]) => `    ${key}: ${value};`).join('\n
                             isAdmin: false,
                             canManage: false,
                             accessType: accessReason,
-                            notMember: true
+                            notMember: true,
+                            ...planMeta
                         });
                         
                         this.bot.logger.debug(`[SERVERS] User ${userId} has ${accessReason} for ${guild.name} but is not a member`);
@@ -12128,41 +13280,46 @@ ${Object.entries(colors).map(([key, value]) => `    ${key}: ${value};`).join('\n
 
     async replyToTicket(req, res) {
         try {
-            const ticketId = req.params.ticketId;
-            const { message, senderId } = req.body;
+            const ticketId = req.params.ticketId || req.params.id;
+            const cleanTicketId = String(ticketId || '').replace('ticket-', '').trim();
+            const senderId = req.body?.senderId || req.body?.staffId || req.user?.discordId || req.user?.userId || req.user?.id;
+            const { message } = req.body;
             
             if (!ticketId || !message || !senderId) {
                 return res.status(400).json({ error: 'Ticket ID, message, and sender ID required' });
             }
 
-            // Authorization: require dashboard user to be admin or staff
-            const actingUserId = req.user?.discordId || req.user?.userId || req.user?.id || req.user?.sub || null;
-            if (!actingUserId) return res.status(401).json({ error: 'Unauthorized' });
+            const ticketAccess = await this.requireTicketPermission(req, res, {
+                ticketId: cleanTicketId,
+                requireReply: true,
+            });
+            if (!ticketAccess) return;
+
+            const actingUserId = ticketAccess.userId || this.getRequestUserId(req);
+
+            // Fast path for dashboard route /api/tickets/:id/reply using DM ticket manager.
+            if (req.params.id && this.bot.dmTicketManager) {
+                const staffName = req.body?.staffName || req.user?.username || req.user?.globalName || 'Staff Member';
+                const result = await this.bot.dmTicketManager.sendStaffReply(
+                    cleanTicketId,
+                    String(senderId),
+                    staffName,
+                    String(message)
+                );
+
+                if (result?.success) {
+                    return res.json({ success: true, message: 'Reply sent successfully' });
+                }
+            }
 
             // Get ticket details (needed to determine guild and channel)
             const ticket = await this.bot.database.get(`
                 SELECT * FROM active_tickets WHERE ticket_id = ?
-            `, [ticketId]);
+            `, [cleanTicketId]);
 
             if (!ticket) {
                 return res.status(404).json({ error: 'Ticket not found' });
             }
-
-            const ticketGuild = ticket.guild_id;
-            const guildObj = this.bot.client.guilds.cache.get(ticketGuild);
-            let allowed = false;
-            if (req.user?.role === 'admin' || req.user?.role === 'owner') allowed = true;
-            if (guildObj) {
-                const member = await guildObj.members.fetch(actingUserId).catch(() => null);
-                if (member) {
-                    if (member.permissions.has('Administrator') || member.permissions.has('ManageGuild')) allowed = true;
-                }
-                // Check configured ticket staff role
-                const cfg = await this.bot.database.get('SELECT ticket_staff_role FROM guild_configs WHERE guild_id = ?', [guildObj.id]);
-                if (!allowed && cfg?.ticket_staff_role && member && member.roles.cache.has(cfg.ticket_staff_role)) allowed = true;
-            }
-
-            if (!allowed) return res.status(403).json({ error: 'Forbidden' });
 
             if (ticket.status === 'closed') {
                 return res.status(400).json({ error: 'Cannot reply to closed ticket' });
@@ -12187,12 +13344,12 @@ ${Object.entries(colors).map(([key, value]) => `    ${key}: ${value};`).join('\n
 
             // Prefer bot-side handling to ensure consistent storage/action
             if (this.bot.ticketSystem && typeof this.bot.ticketSystem.replyFromDashboard === 'function') {
-                const result = await this.bot.ticketSystem.replyFromDashboard(ticketId, senderId, message);
+                const result = await this.bot.ticketSystem.replyFromDashboard(cleanTicketId, senderId, message);
                 if (result.ok) {
                     // Confirmation log
                     try {
                             if (this.bot.confirmationManager && typeof this.bot.confirmationManager.sendConfirmation === 'function') {
-                                await this.bot.confirmationManager.sendConfirmation(ticket.guild_id, 'tickets', `ticket.${ticketId}.reply`, message, null, actingUserId || 'dashboard');
+                                await this.bot.confirmationManager.sendConfirmation(ticket.guild_id, 'tickets', `ticket.${cleanTicketId}.reply`, message, null, actingUserId || 'dashboard');
                             }
                     } catch (e) { this.bot.logger?.warn('Failed to send confirmation for ticket reply:', e.message || e); }
                     return res.json({ success: true, message: 'Reply sent' });
@@ -12228,7 +13385,7 @@ ${Object.entries(colors).map(([key, value]) => `    ${key}: ${value};`).join('\n
             // Fallback confirmation
             try {
                 if (this.bot.confirmationManager && typeof this.bot.confirmationManager.sendConfirmation === 'function') {
-                    await this.bot.confirmationManager.sendConfirmation(ticket.guild_id, 'tickets', `ticket.${ticketId}.reply`, message, null, actingUserId || 'dashboard');
+                    await this.bot.confirmationManager.sendConfirmation(ticket.guild_id, 'tickets', `ticket.${cleanTicketId}.reply`, message, null, actingUserId || 'dashboard');
                 }
             } catch (e) { this.bot.logger?.warn('Failed to send confirmation for ticket reply (fallback):', e.message || e); }
 
@@ -12257,23 +13414,14 @@ ${Object.entries(colors).map(([key, value]) => `    ${key}: ${value};`).join('\n
                 return res.status(404).json({ error: 'Ticket not found' });
             }
 
-            // Authorization: require dashboard user to be admin or staff
-            const actingUserId = req.user?.discordId || req.user?.userId || req.user?.id || req.user?.sub || null;
-            if (!actingUserId) return res.status(401).json({ error: 'Unauthorized' });
+            const ticketAccess = await this.requireTicketPermission(req, res, {
+                ticketId,
+                guildId: ticket.guild_id || null,
+                requireManage: true,
+            });
+            if (!ticketAccess) return;
 
-            const guildObj = this.bot.client.guilds.cache.get(ticket.guild_id);
-            let allowed = false;
-            if (req.user?.role === 'admin' || req.user?.role === 'owner') allowed = true;
-            if (guildObj) {
-                const member = await guildObj.members.fetch(actingUserId).catch(() => null);
-                if (member) {
-                    if (member.permissions.has('Administrator') || member.permissions.has('ManageGuild')) allowed = true;
-                }
-                const cfg = await this.bot.database.get('SELECT ticket_staff_role FROM guild_configs WHERE guild_id = ?', [guildObj.id]);
-                if (!allowed && cfg?.ticket_staff_role && member && member.roles.cache.has(cfg.ticket_staff_role)) allowed = true;
-            }
-
-            if (!allowed) return res.status(403).json({ error: 'Forbidden' });
+            const actingUserId = ticketAccess.userId || this.getRequestUserId(req);
 
             if (ticket.status === 'closed') {
                 return res.status(400).json({ error: 'Ticket is already closed' });
@@ -12373,27 +13521,18 @@ ${Object.entries(colors).map(([key, value]) => `    ${key}: ${value};`).join('\n
 
             if (!guildId || !ticketId || !staffId) return res.status(400).json({ error: 'guildId, ticketId and staffId are required' });
 
-            // Authorization: require dashboard user to be admin or staff
-            const actingUserId = req.user?.discordId || req.user?.userId || req.user?.id || req.user?.sub || null;
-            if (!actingUserId) return res.status(401).json({ error: 'Unauthorized' });
-
             const ticket = await this.bot.database.get(`SELECT * FROM active_tickets WHERE id = ? OR ticket_id = ?`, [ticketId, ticketId]);
             if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
             if (ticket.status === 'closed') return res.status(400).json({ error: 'Ticket already closed' });
 
-            const guildObj = this.bot.client.guilds.cache.get(guildId);
-            let allowed = false;
-            if (req.user?.role === 'admin' || req.user?.role === 'owner') allowed = true;
-            if (guildObj) {
-                const member = await guildObj.members.fetch(actingUserId).catch(() => null);
-                if (member) {
-                    if (member.permissions.has('Administrator') || member.permissions.has('ManageGuild')) allowed = true;
-                }
-                const cfg = await this.bot.database.get('SELECT ticket_staff_role FROM guild_configs WHERE guild_id = ?', [guildObj.id]);
-                if (!allowed && cfg?.ticket_staff_role && member && member.roles.cache.has(cfg.ticket_staff_role)) allowed = true;
-            }
+            const ticketAccess = await this.requireTicketPermission(req, res, {
+                ticketId,
+                guildId: ticket.guild_id || guildId,
+                requireManage: true,
+            });
+            if (!ticketAccess) return;
 
-            if (!allowed) return res.status(403).json({ error: 'Forbidden' });
+            const actingUserId = ticketAccess.userId || this.getRequestUserId(req);
 
             // Prefer bot-side handling
             if (this.bot.ticketSystem && typeof this.bot.ticketSystem.claimFromDashboard === 'function') {
@@ -12806,7 +13945,7 @@ ${Object.entries(colors).map(([key, value]) => `    ${key}: ${value};`).join('\n
 
             // Ensure guild config row exists before trying to UPDATE
             if (!previous) {
-                await this.bot.database.run('INSERT OR IGNORE INTO guild_configs (guild_id) VALUES (?)', [guildId]);
+                await this.bot.database.run("INSERT OR IGNORE INTO guild_configs (guild_id, raid_action) VALUES (?, 'quarantine')", [guildId]);
             }
 
             // Update database
@@ -12958,6 +14097,13 @@ ${Object.entries(colors).map(([key, value]) => `    ${key}: ${value};`).join('\n
 
         // 404 handler (must be after all route registrations including Darklock)
         this.app.use('*', (req, res) => {
+            // Serve the branded HTML 404 to browsers; keep JSON for API clients
+            if (req.accepts(['json', 'html']) === 'html' && !req.originalUrl.startsWith('/api')) {
+                const notFoundPage = path.join(__dirname, '../../darklock/views/404.html');
+                if (fs.existsSync(notFoundPage)) {
+                    return res.status(404).sendFile(notFoundPage);
+                }
+            }
             res.status(404).json({ error: 'Not found' });
         });
 

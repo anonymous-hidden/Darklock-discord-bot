@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 
-    <style>html,body{background:#0a0a0f!important;color-scheme:dark}</style>
+    <style>html,body{background:#000!important;color-scheme:dark}</style>
     <meta name="color-scheme" content="dark">
     <!--dl-pt-boot-->
     <script>
@@ -262,19 +262,384 @@
             height: 20px;
             cursor: pointer;
         }
+
+        /* Professional tickets page overrides */
+        .tickets-list-header {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            padding: 14px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            background: rgba(255, 255, 255, 0.015);
+        }
+
+        .tickets-list-header-top {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+        }
+
+        .tickets-list-title {
+            font-size: 13px;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            color: rgba(255, 255, 255, 0.9);
+        }
+
+        .tickets-list-count {
+            font-size: 11px;
+            color: rgba(255, 255, 255, 0.55);
+        }
+
+        .tickets-filter-bar {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+
+        .filter-btn {
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            background: rgba(255, 255, 255, 0.03);
+            color: rgba(255, 255, 255, 0.78);
+            border-radius: 10px;
+            padding: 8px 12px;
+            font-size: 13px;
+            transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+        }
+
+        .filter-btn:hover {
+            background: rgba(255, 255, 255, 0.06);
+            border-color: rgba(255, 255, 255, 0.16);
+            color: #fff;
+        }
+
+        .filter-btn.active {
+            background: rgba(0, 212, 255, 0.12);
+            border-color: rgba(0, 212, 255, 0.35);
+            color: #d8f8ff;
+        }
+
+        .ticket-search-row {
+            display: flex;
+            gap: 8px;
+        }
+
+        .ticket-search-input {
+            flex: 1;
+            padding: 10px 12px;
+            background: rgba(0, 0, 0, 0.35);
+            color: var(--ds-text-primary);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 10px;
+            font-size: 13px;
+            outline: none;
+        }
+
+        .ticket-search-input:focus {
+            border-color: rgba(0, 212, 255, 0.4);
+            box-shadow: 0 0 0 3px rgba(0, 212, 255, 0.1);
+        }
+
+        .ticket-refresh-btn {
+            padding: 9px 12px;
+            background: rgba(255, 255, 255, 0.03);
+            color: var(--ds-text-primary);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 10px;
+            cursor: pointer;
+        }
+
+        .ticket-refresh-btn:hover {
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        .ticket-item {
+            background: rgba(255, 255, 255, 0.02);
+            transition: background 0.2s ease, border-color 0.2s ease;
+            border: 1px solid rgba(255, 255, 255, 0.06);
+        }
+
+        .ticket-item:hover {
+            border-color: rgba(255, 255, 255, 0.14);
+            transform: none;
+        }
+
+        .ticket-item.active {
+            background: rgba(0, 212, 255, 0.08);
+            border-color: rgba(0, 212, 255, 0.25);
+        }
+
+        .ticket-avatar {
+            border: 1px solid rgba(255, 255, 255, 0.25);
+        }
+
+        .priority-badge {
+            letter-spacing: 0.03em;
+            border: 1px solid transparent;
+        }
+
+        .priority-low { background: rgba(34, 197, 94, 0.16); border-color: rgba(34, 197, 94, 0.35); color: #a7f3d0; }
+        .priority-medium { background: rgba(234, 179, 8, 0.16); border-color: rgba(234, 179, 8, 0.35); color: #fde68a; }
+        .priority-high { background: rgba(249, 115, 22, 0.15); border-color: rgba(249, 115, 22, 0.32); color: #fdba74; }
+        .priority-urgent { background: rgba(239, 68, 68, 0.16); border-color: rgba(239, 68, 68, 0.38); color: #fecaca; animation: none; }
+        .priority-escalated { background: rgba(239, 68, 68, 0.2); border-color: rgba(239, 68, 68, 0.45); color: #fee2e2; animation: none; }
+
+        .assigned-to {
+            background: rgba(255, 255, 255, 0.07);
+            color: rgba(255, 255, 255, 0.85);
+        }
+
+        .ticket-detail-panel .empty-state {
+            min-height: 360px;
+            justify-content: center;
+        }
+
+        .empty-icon i {
+            font-size: 2.7rem;
+            opacity: 0.35;
+        }
+
+        .ticket-description-block {
+            margin-top: 16px;
+        }
+
+        .ticket-description-label {
+            font-weight: 600;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+            font-size: 13px;
+        }
+
+        .ticket-description-content {
+            color: var(--text-primary);
+            line-height: 1.6;
+        }
+
+        .ticket-category-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            width: fit-content;
+            margin: 0 0 14px;
+            padding: 5px 10px;
+            border-radius: 999px;
+            border: 1px solid rgba(0, 212, 255, 0.28);
+            background: rgba(0, 212, 255, 0.08);
+            color: #bfefff;
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 0.03em;
+            text-transform: uppercase;
+        }
+
+        .category-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 2px 8px;
+            border-radius: 999px;
+            border: 1px solid rgba(255, 255, 255, 0.16);
+            background: rgba(255, 255, 255, 0.06);
+            color: rgba(255, 255, 255, 0.82);
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: capitalize;
+        }
+
+        .ticket-workspace {
+            display: grid;
+            grid-template-columns: minmax(360px, 1.1fr) minmax(300px, 1fr);
+            gap: 16px;
+            height: 100%;
+            min-height: 560px;
+            padding: 14px;
+        }
+
+        .ticket-overview-pane,
+        .ticket-chat-pane {
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 14px;
+            background: rgba(255, 255, 255, 0.02);
+            min-height: 0;
+        }
+
+        .ticket-overview-pane {
+            overflow-y: auto;
+        }
+
+        .ticket-chat-pane {
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .ticket-chat-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 14px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            font-weight: 700;
+            color: rgba(255, 255, 255, 0.9);
+        }
+
+        .ticket-chat-header-left {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .ticket-chat-tabs {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+
+        .ticket-chat-tab {
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            border-radius: 999px;
+            padding: 5px 10px;
+            background: rgba(255, 255, 255, 0.04);
+            color: rgba(255, 255, 255, 0.82);
+            font-size: 12px;
+            cursor: pointer;
+        }
+
+        .ticket-chat-tab.active {
+            background: rgba(0, 212, 255, 0.14);
+            border-color: rgba(0, 212, 255, 0.38);
+            color: #d8f8ff;
+        }
+
+        .chat-pane-toggle {
+            padding: 7px 10px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            background: rgba(255, 255, 255, 0.04);
+            color: rgba(255, 255, 255, 0.88);
+            font-size: 12px;
+            cursor: pointer;
+        }
+
+        .chat-pane-toggle:hover {
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        .ticket-workspace.chat-collapsed {
+            grid-template-columns: 1fr;
+        }
+
+        .ticket-workspace.chat-collapsed .ticket-chat-pane {
+            display: none;
+        }
+
+        .ticket-reply-box {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            padding: 12px;
+            border-top: 1px solid rgba(255, 255, 255, 0.08);
+            background: rgba(0, 0, 0, 0.2);
+        }
+
+        .ticket-reply-box textarea {
+            width: 100%;
+            resize: vertical;
+            min-height: 70px;
+            max-height: 180px;
+            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            background: rgba(0, 0, 0, 0.35);
+            color: #fff;
+            padding: 10px 12px;
+            font-size: 14px;
+            outline: none;
+        }
+
+        .ticket-reply-box textarea:focus {
+            border-color: rgba(0, 212, 255, 0.4);
+            box-shadow: 0 0 0 3px rgba(0, 212, 255, 0.1);
+        }
+
+        .reply-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+        }
+
+        .priority-normal {
+            background: rgba(234, 179, 8, 0.16);
+            border-color: rgba(234, 179, 8, 0.35);
+            color: #fde68a;
+        }
+
+        .message-item {
+            padding: 1rem;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 10px;
+            margin-bottom: 0.75rem;
+        }
+
+        .message-meta {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .message-author {
+            color: var(--accent-primary);
+            font-weight: 700;
+        }
+
+        .message-time {
+            color: var(--text-muted);
+            font-size: 0.8rem;
+        }
+
+        .message-content {
+            color: var(--text-secondary);
+            line-height: 1.55;
+        }
+
+        .staff-room-message {
+            border-color: rgba(0, 212, 255, 0.28);
+            background: rgba(0, 212, 255, 0.07);
+        }
+
+        .staff-role-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 2px 8px;
+            border-radius: 999px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            background: rgba(255, 255, 255, 0.06);
+            color: rgba(255, 255, 255, 0.84);
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+        }
         
         .hidden {
             display: none !important;
         }
+
+        @media (max-width: 1200px) {
+            .ticket-workspace {
+                grid-template-columns: 1fr;
+            }
+
+            .ticket-workspace.chat-collapsed .ticket-chat-pane {
+                display: flex;
+            }
+        }
     </style>
 </head>
 <body>
-    <!-- Animated Background -->
-    <div class="bg-animation">
-        <div class="orb orb-1"></div>
-        <div class="orb orb-2"></div>
-        <div class="orb orb-3"></div>
-    </div>
 
     <div class="dashboard-layout">
         <!-- Sidebar -->
@@ -474,6 +839,10 @@
                     <!-- Tickets List Panel -->
                     <div class="tickets-list-panel">
                         <div class="tickets-list-header">
+                            <div class="tickets-list-header-top">
+                                <div class="tickets-list-title">Queue</div>
+                                <div class="tickets-list-count" id="ticketsVisibleCount">0 shown</div>
+                            </div>
                             <div class="tickets-filter-bar">
                                 <button class="filter-btn active" data-status="all" onclick="filterTickets('all')">All</button>
                                 <button class="filter-btn" data-status="open" onclick="filterTickets('open')">Open</button>
@@ -481,10 +850,9 @@
                                 <button class="filter-btn" data-status="escalated" onclick="filterTickets('escalated')">Escalated</button>
                                 <button class="filter-btn" data-status="closed" onclick="filterTickets('closed')">Closed</button>
                             </div>
-                            <div style="margin-top: 8px; display: flex; gap: 8px;">
-                                <input type="search" id="ticketSearch" placeholder="Search by subject, user, or description..." oninput="renderTickets()"
-                                    style="flex: 1; padding: 8px 12px; background: var(--ds-surface-2); color: var(--ds-text-primary); border: 1px solid var(--ds-border); border-radius: 6px; font-size: 13px;">
-                                <button onclick="loadTickets()" title="Refresh tickets" style="padding: 8px 12px; background: var(--ds-surface-2); color: var(--ds-text-primary); border: 1px solid var(--ds-border); border-radius: 6px; cursor: pointer;">
+                            <div class="ticket-search-row">
+                                <input type="search" id="ticketSearch" class="ticket-search-input" placeholder="Search subject, user, or description..." oninput="renderTickets()">
+                                <button onclick="loadTickets()" class="ticket-refresh-btn" title="Refresh tickets">
                                     <i class="fas fa-sync"></i>
                                 </button>
                             </div>
@@ -500,7 +868,7 @@
                     <!-- Ticket Detail Panel -->
                     <div class="ticket-detail-panel" id="ticketDetailPanel">
                         <div class="empty-state">
-                            <div class="empty-icon">📬</div>
+                            <div class="empty-icon"><i class="fas fa-inbox"></i></div>
                             <div class="empty-title">Select a ticket</div>
                             <div class="empty-description">Click on a ticket from the list to view details and respond.</div>
                         </div>
@@ -517,17 +885,70 @@
         let allTickets = [];
         let currentFilter = 'all';
         let currentTicketId = null;
+        let currentChatTab = 'customer';
         let userRole = 'viewer'; // viewer, moderation, administration
+        let userPermissions = { features: {}, tickets: {} };
         let currentUser = null;
+
+        const ticketCategories = ['general', 'support', 'billing', 'bug', 'report'];
+
+        function normalizeDashboardRole(rawRole) {
+            const role = String(rawRole || '').trim().toLowerCase();
+            if (role === 'administration' || role === 'admin' || role === 'owner' || role === 'super_admin') return 'administration';
+            if (role === 'moderation' || role === 'moderator' || role === 'mod') return 'moderation';
+            return 'viewer';
+        }
+
+        function hasTicketViewPermission() {
+            if (userPermissions?.tickets?.canView === true) return true;
+            return userRole !== 'viewer';
+        }
+
+        function canReplyTickets() {
+            // TEMPORARY override: allow replies for any role that can view tickets.
+            return hasTicketViewPermission();
+        }
+
+        function canManageTickets() {
+            if (userPermissions?.tickets?.canManage === true) return true;
+            return userRole === 'administration';
+        }
+
+        function canViewAnalytics() {
+            if (userPermissions?.tickets?.canAnalytics === true) return true;
+            if (userPermissions?.features?.analytics === true) return true;
+            return userRole === 'administration';
+        }
+
+        function normalizeTicketCategory(ticket) {
+            const raw = String(ticket?.category || '').trim().toLowerCase();
+            if (ticketCategories.includes(raw)) return raw;
+            return 'general';
+        }
+
+        function categoryLabel(category) {
+            const value = String(category || 'general').toLowerCase();
+            if (value === 'bug') return 'Bug Report';
+            if (value === 'billing') return 'Billing';
+            if (value === 'report') return 'User Report';
+            if (value === 'support') return 'Support';
+            return 'General';
+        }
+
+        function isChatCollapsed() {
+            return localStorage.getItem('ticketsChatCollapsed') === '1';
+        }
 
         // Initialize
         document.addEventListener('DOMContentLoaded', async () => {
             await loadUserData();
+            const canAccessTickets = await checkAccess();
+            if (!canAccessTickets) return;
+
             await loadUserServers();
             await loadServerInfo();
-            await checkAccess();
             await loadTickets();
-            if (userRole === 'administration') {
+            if (canViewAnalytics()) {
                 await loadAnalytics();
             }
             
@@ -544,7 +965,7 @@
             setInterval(() => {
                 if (!currentTicketId && document.visibilityState === 'visible') {
                     loadTickets();
-                    if (userRole === 'administration') loadAnalytics();
+                    if (canViewAnalytics()) loadAnalytics();
                 }
             }, 30000);
 
@@ -590,9 +1011,18 @@
                 credentials: 'include'
             });
 
-            if (response.status === 401 || response.status === 403) {
+            if (response.status === 401) {
                 window.location.href = '/login';
                 throw new Error('Authentication required');
+            }
+
+            if (response.status === 403) {
+                const err = await response.clone().json().catch(() => null);
+                const authLikeError = String(err?.error || '').toLowerCase();
+                if (authLikeError.includes('token') || authLikeError.includes('auth')) {
+                    window.location.href = '/login';
+                    throw new Error('Authentication required');
+                }
             }
 
             return response;
@@ -606,10 +1036,14 @@
 
                 if (data.user) {
                     currentUser = data.user;
-                    userRole = data.user.role || 'viewer';
+                    userRole = normalizeDashboardRole(data.user.dashboardRole || data.user.role);
+                    userPermissions = data.user.permissions || { features: {}, tickets: {} };
                     
                     document.getElementById('userName').textContent = data.user.globalName || data.user.username || 'User';
-                    document.getElementById('userRole').textContent = data.user.role || 'Viewer';
+                    document.getElementById('userRole').textContent =
+                        userRole === 'administration' ? 'Administration' :
+                        userRole === 'moderation' ? 'Moderation' :
+                        'Viewer';
                     
                     if (data.user.avatar) {
                         document.getElementById('userAvatar').src = `https://cdn.discordapp.com/avatars/${data.user.userId}/${data.user.avatar}.png?size=64`;
@@ -617,8 +1051,9 @@
                         document.getElementById('userAvatar').src = 'https://cdn.discordapp.com/embed/avatars/0.png';
                     }
 
-                    if (data.user.currentGuildId) {
-                        localStorage.setItem('selectedGuildId', data.user.currentGuildId);
+                    const preferredGuildId = data.user.currentGuildId || data.user.accessGuild;
+                    if (preferredGuildId) {
+                        localStorage.setItem('selectedGuildId', preferredGuildId);
                     }
                 }
             } catch (error) {
@@ -628,20 +1063,22 @@
 
         // Check access based on role
         async function checkAccess() {
-            if (userRole === 'viewer') {
+            if (!hasTicketViewPermission()) {
                 // Hide tickets tab for viewers
                 const ticketsNav = document.getElementById('ticketsNavItem');
                 if (ticketsNav) ticketsNav.style.display = 'none';
                 
                 // Redirect to dashboard
                 window.location.href = '/dashboard';
-                return;
+                return false;
             }
 
             // Show analytics for admins
-            if (userRole === 'administration') {
+            if (canViewAnalytics()) {
                 document.getElementById('analyticsSection').classList.remove('hidden');
             }
+
+            return true;
         }
 
         // Load server info
@@ -688,7 +1125,7 @@
                 if (!guildId) {
                     document.getElementById('ticketsListContent').innerHTML = `
                         <div class="empty-state">
-                            <div class="empty-icon">🔍</div>
+                            <div class="empty-icon"><i class="fas fa-search"></i></div>
                             <div class="empty-title">Select a Server</div>
                             <div class="empty-description">Please select a server from the sidebar to view tickets</div>
                         </div>
@@ -722,6 +1159,7 @@
                             userAvatar: null,
                             status: t.status || 'open',
                             priority: t.priority || 'normal',
+                            category: t.category || 'general',
                             subject: t.subject || 'Support Ticket',
                             description: t.description || '',
                             createdAt: t.created || t.createdAt || t.created_at
@@ -748,7 +1186,7 @@
                 console.error('Error loading tickets:', error);
                 document.getElementById('ticketsListContent').innerHTML = `
                     <div class="empty-state">
-                        <div class="empty-icon">❌</div>
+                        <div class="empty-icon"><i class="fas fa-circle-exclamation"></i></div>
                         <div class="empty-title">Failed to load tickets</div>
                         <div class="empty-description">${error.message}</div>
                     </div>
@@ -782,10 +1220,15 @@
                 });
             }
 
+            const visibleCount = document.getElementById('ticketsVisibleCount');
+            if (visibleCount) {
+                visibleCount.textContent = `${filtered.length} shown`;
+            }
+
             if (filtered.length === 0) {
                 container.innerHTML = `
                     <div class="empty-state">
-                        <div class="empty-icon">📭</div>
+                        <div class="empty-icon"><i class="fas fa-inbox"></i></div>
                         <div class="empty-title">No tickets found</div>
                         <div class="empty-description">
                             ${currentFilter === 'all' 
@@ -798,8 +1241,11 @@
             }
 
             container.innerHTML = filtered.map(ticket => {
-                const priorityClass = ticket.escalated ? 'escalated' : (ticket.priority || 'medium');
+                const priorityRaw = String(ticket.priority || 'normal').toLowerCase();
+                const priority = priorityRaw === 'medium' ? 'normal' : priorityRaw;
+                const priorityClass = ticket.escalated ? 'escalated' : priority;
                 const descPreview = ticket.description ? ticket.description.substring(0, 100) + '...' : 'No description';
+                const category = normalizeTicketCategory(ticket);
                 
                 return `
                     <div class="ticket-item status-${ticket.status || 'open'} ${ticket.id === currentTicketId ? 'active' : ''}" 
@@ -810,11 +1256,12 @@
                                  class="ticket-avatar">
                             <div class="ticket-title">${escapeHtml(ticket.title || ticket.subject || ticket.category || 'Support Ticket')}</div>
                             <span class="priority-badge priority-${priorityClass}">
-                                ${ticket.escalated ? '⚠️ ESCALATED' : (ticket.priority || 'MEDIUM').toUpperCase()}
+                                ${ticket.escalated ? '⚠️ ESCALATED' : priority.toUpperCase()}
                             </span>
                         </div>
                         <div class="ticket-description">${escapeHtml(descPreview)}</div>
                         <div class="ticket-meta">
+                            <span class="category-badge">${escapeHtml(categoryLabel(category))}</span>
                             <span class="ticket-meta-item">
                                 <i class="fas fa-user"></i>
                                 ${escapeHtml(ticket.userName || 'Unknown')}
@@ -850,6 +1297,7 @@
         // Select ticket and show details
         async function selectTicket(ticketId) {
             currentTicketId = ticketId;
+            currentChatTab = 'customer';
             renderTickets();
 
             const ticket = allTickets.find(t => t.id === ticketId);
@@ -860,142 +1308,218 @@
             // Determine what controls to show based on role
             const isAdmin = userRole === 'administration';
             const isMod = userRole === 'moderation';
+            const canManage = canManageTickets();
+            const canReply = canReplyTickets();
+            const isStaff = canReply;
+            const priorityRaw = String(ticket.priority || 'normal').toLowerCase();
+            const priority = priorityRaw === 'medium' ? 'normal' : priorityRaw;
+            const category = normalizeTicketCategory(ticket);
+            const collapsedClass = isAdmin && isChatCollapsed() ? 'chat-collapsed' : '';
             
             panel.innerHTML = `
-                <div class="ticket-detail-header">
-                    <div class="ticket-detail-title">${escapeHtml(ticket.title || ticket.subject || ticket.category || 'Support Ticket')}</div>
-                    <div class="ticket-info-grid">
-                        <div class="ticket-info-item">
-                            <div class="ticket-info-label">Status</div>
-                            <div class="ticket-info-value">
-                                <span class="badge badge-${ticket.status === 'open' ? 'success' : ticket.status === 'in-progress' ? 'info' : ticket.status === 'escalated' ? 'danger' : 'muted'}">
-                                    ${(ticket.status || 'open').toUpperCase()}
-                                </span>
+                <div class="ticket-workspace ${collapsedClass}" id="ticketWorkspace">
+                    <div class="ticket-overview-pane">
+                        <div class="ticket-detail-header">
+                            <div class="ticket-detail-title">${escapeHtml(ticket.title || ticket.subject || ticket.category || 'Support Ticket')}</div>
+                            <div class="ticket-category-pill"><i class="fas fa-folder-open"></i> ${escapeHtml(categoryLabel(category))}</div>
+                            <div class="ticket-description-block" style="margin-top: 0;">
+                                <div class="ticket-description-label">Description</div>
+                                <div class="ticket-description-content">${escapeHtml(ticket.description || 'No description provided')}</div>
+                            </div>
+                            <div class="ticket-info-grid" style="margin-top: 14px;">
+                                <div class="ticket-info-item">
+                                    <div class="ticket-info-label">Status</div>
+                                    <div class="ticket-info-value">
+                                        <span class="badge badge-${ticket.status === 'open' ? 'success' : ticket.status === 'in-progress' ? 'info' : ticket.status === 'escalated' ? 'danger' : 'muted'}">
+                                            ${(ticket.status || 'open').toUpperCase()}
+                                        </span>
+                                    </div>
+                                </div>
+                                <div class="ticket-info-item">
+                                    <div class="ticket-info-label">Priority</div>
+                                    <div class="ticket-info-value">
+                                        <span class="priority-badge priority-${ticket.escalated ? 'escalated' : priority}">
+                                            ${ticket.escalated ? '⚠️ ESCALATED' : priority.toUpperCase()}
+                                        </span>
+                                    </div>
+                                </div>
+                                <div class="ticket-info-item">
+                                    <div class="ticket-info-label">Created By</div>
+                                    <div class="ticket-info-value">${escapeHtml(ticket.userName || 'Unknown')}</div>
+                                </div>
+                                <div class="ticket-info-item">
+                                    <div class="ticket-info-label">Created</div>
+                                    <div class="ticket-info-value">${formatDate(ticket.createdAt)}</div>
+                                </div>
+                                ${ticket.assignedTo ? `
+                                    <div class="ticket-info-item">
+                                        <div class="ticket-info-label">Assigned To</div>
+                                        <div class="ticket-info-value">${escapeHtml(ticket.assignedToName || ticket.assignedTo)}</div>
+                                    </div>
+                                ` : ''}
                             </div>
                         </div>
-                        <div class="ticket-info-item">
-                            <div class="ticket-info-label">Priority</div>
-                            <div class="ticket-info-value">
-                                <span class="priority-badge priority-${ticket.escalated ? 'escalated' : (ticket.priority || 'medium')}">
-                                    ${ticket.escalated ? '⚠️ ESCALATED' : (ticket.priority || 'MEDIUM').toUpperCase()}
-                                </span>
+
+                        ${canManage ? `
+                            <div class="control-panel">
+                                <div class="control-panel-title">
+                                    <i class="fas fa-tools"></i>
+                                    ${isAdmin ? 'Admin Controls' : 'Staff Controls'}
+                                </div>
+                                <div class="control-row">
+                                    <label>
+                                        <span style="color: var(--text-secondary); font-size: 13px;">Status</span>
+                                        <select id="ticketStatusSelect" onchange="updateTicketStatus('${ticketId}', this.value)">
+                                            <option value="open" ${ticket.status === 'open' ? 'selected' : ''}>Open</option>
+                                            <option value="in-progress" ${ticket.status === 'in-progress' ? 'selected' : ''}>In Progress</option>
+                                            <option value="waiting" ${ticket.status === 'waiting' ? 'selected' : ''}>Waiting for User</option>
+                                            <option value="resolved" ${ticket.status === 'resolved' ? 'selected' : ''}>Resolved</option>
+                                            <option value="closed" ${ticket.status === 'closed' ? 'selected' : ''}>Closed</option>
+                                        </select>
+                                    </label>
+                                    <label>
+                                        <span style="color: var(--text-secondary); font-size: 13px;">Priority</span>
+                                        <select id="ticketPrioritySelect" onchange="updateTicketPriority('${ticketId}', this.value)">
+                                            <option value="low" ${priority === 'low' ? 'selected' : ''}>Low</option>
+                                            <option value="normal" ${priority === 'normal' ? 'selected' : ''}>Normal</option>
+                                            <option value="high" ${priority === 'high' ? 'selected' : ''}>High</option>
+                                            <option value="urgent" ${priority === 'urgent' ? 'selected' : ''}>Urgent</option>
+                                        </select>
+                                    </label>
+                                    <label>
+                                        <span style="color: var(--text-secondary); font-size: 13px;">Category</span>
+                                        <select id="ticketCategorySelect" onchange="updateTicketCategory('${ticketId}', this.value)">
+                                            ${ticketCategories.map(opt => `<option value="${opt}" ${category === opt ? 'selected' : ''}>${categoryLabel(opt)}</option>`).join('')}
+                                        </select>
+                                    </label>
+                                </div>
+                                <div class="control-row">
+                                    <label>
+                                        <span style="color: var(--text-secondary); font-size: 13px;">Assign To</span>
+                                        <input type="text" id="assignInput" placeholder="Discord user ID" value="${escapeHtml(ticket.assignedTo || '')}">
+                                    </label>
+                                    <button class="btn btn-primary" onclick="assignTicket('${ticketId}', document.getElementById('assignInput').value)" style="margin-top: 20px;">
+                                        <i class="fas fa-user-check"></i> Assign
+                                    </button>
+                                </div>
+                                <div class="dm-toggle">
+                                    <input type="checkbox" id="dmNotify" ${ticket.dmNotify ? 'checked' : ''} onchange="toggleDMNotify('${ticketId}', this.checked)">
+                                    <label for="dmNotify" style="cursor: pointer; color: var(--text-secondary);">
+                                        <i class="fas fa-envelope"></i> DM user on updates
+                                    </label>
+                                </div>
+                            </div>
+                        ` : ''}
+
+                        ${isMod && !ticket.escalated && !isAdmin ? `
+                            <div style="margin: 16px;">
+                                <button class="escalate-btn" onclick="escalateTicket('${ticketId}')">
+                                    <i class="fas fa-exclamation-triangle"></i>
+                                    Escalate to Admin
+                                </button>
+                            </div>
+                        ` : ''}
+
+                        <div class="ticket-actions">
+                            ${canManage && ticket.status !== 'closed' ? `
+                                <button class="btn btn-danger" onclick="closeTicket('${ticketId}')">
+                                    <i class="fas fa-times"></i> Close Ticket
+                                </button>
+                            ` : canManage ? `
+                                <button class="btn btn-success" onclick="reopenTicket('${ticketId}')">
+                                    <i class="fas fa-redo"></i> Reopen Ticket
+                                </button>
+                            ` : ''}
+                            ${canReply ? `
+                                <button class="btn btn-secondary" onclick="showInternalNoteModal('${ticketId}')">
+                                    <i class="fas fa-sticky-note"></i> Add Internal Note
+                                </button>
+                            ` : ''}
+                            ${canManage ? `
+                                <button class="btn btn-secondary" onclick="exportTranscript('${ticketId}')">
+                                    <i class="fas fa-download"></i> Export Transcript
+                                </button>
+                            ` : ''}
+                            <button class="btn btn-secondary" onclick="viewInDiscord('${ticket.channelId}')">
+                                <i class="fab fa-discord"></i> View in Discord
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="ticket-chat-pane" id="ticketChatPane">
+                        <div class="ticket-chat-header">
+                            <div class="ticket-chat-header-left">
+                                <span><i class="fas fa-comments"></i> Conversation</span>
+                                ${isStaff ? `
+                                    <div class="ticket-chat-tabs">
+                                        <button class="ticket-chat-tab active" id="ticketChatTabCustomer" onclick="switchTicketChatTab('customer', '${ticketId}')">
+                                            User Chat
+                                        </button>
+                                        <button class="ticket-chat-tab" id="ticketChatTabStaff" onclick="switchTicketChatTab('staff', '${ticketId}')">
+                                            Staff Room
+                                        </button>
+                                    </div>
+                                ` : ''}
+                            </div>
+                            ${isAdmin ? `
+                                <button class="chat-pane-toggle" id="chatCollapseBtn" onclick="toggleTicketChatPane()">
+                                    <i class="fas fa-compress-alt"></i> Collapse
+                                </button>
+                            ` : ''}
+                        </div>
+                        <div class="ticket-messages" id="ticketMessages">
+                            <div class="loading">
+                                <div class="spinner"></div>
+                                <div>Loading conversation...</div>
                             </div>
                         </div>
-                        <div class="ticket-info-item">
-                            <div class="ticket-info-label">Created By</div>
-                            <div class="ticket-info-value">${escapeHtml(ticket.userName || 'Unknown')}</div>
-                        </div>
-                        <div class="ticket-info-item">
-                            <div class="ticket-info-label">Created</div>
-                            <div class="ticket-info-value">${formatDate(ticket.createdAt)}</div>
-                        </div>
-                        ${ticket.assignedTo ? `
-                            <div class="ticket-info-item">
-                                <div class="ticket-info-label">Assigned To</div>
-                                <div class="ticket-info-value">${escapeHtml(ticket.assignedToName || ticket.assignedTo)}</div>
+                        ${isStaff ? `
+                            <div class="ticket-reply-box">
+                                <textarea id="ticketReplyInput" placeholder="Reply to the ticket user..."></textarea>
+                                <div class="reply-actions">
+                                    <button class="btn btn-primary" onclick="sendCurrentChatMessage('${ticketId}')">
+                                        <i class="fas fa-paper-plane"></i> Send Reply
+                                    </button>
+                                </div>
                             </div>
                         ` : ''}
                     </div>
-                    
-                    ${ticket.description ? `
-                        <div style="margin-top: 16px;">
-                            <div style="font-weight: 600; color: var(--text-secondary); margin-bottom: 8px;">Description:</div>
-                            <div style="color: var(--text-primary); line-height: 1.6;">${escapeHtml(ticket.description)}</div>
-                        </div>
-                    ` : ''}
-                </div>
-
-                <!-- Admin Control Panel -->
-                ${isAdmin ? `
-                    <div class="control-panel">
-                        <div class="control-panel-title">
-                            <i class="fas fa-tools"></i>
-                            Admin Controls
-                        </div>
-                        <div class="control-row">
-                            <label>
-                                <span style="color: var(--text-secondary); font-size: 13px;">Status</span>
-                                <select id="ticketStatusSelect" onchange="updateTicketStatus('${ticketId}', this.value)">
-                                    <option value="open" ${ticket.status === 'open' ? 'selected' : ''}>Open</option>
-                                    <option value="in-progress" ${ticket.status === 'in-progress' ? 'selected' : ''}>In Progress</option>
-                                    <option value="waiting" ${ticket.status === 'waiting' ? 'selected' : ''}>Waiting for User</option>
-                                    <option value="resolved" ${ticket.status === 'resolved' ? 'selected' : ''}>Resolved</option>
-                                    <option value="closed" ${ticket.status === 'closed' ? 'selected' : ''}>Closed</option>
-                                </select>
-                            </label>
-                            <label>
-                                <span style="color: var(--text-secondary); font-size: 13px;">Priority</span>
-                                <select id="ticketPrioritySelect" onchange="updateTicketPriority('${ticketId}', this.value)">
-                                    <option value="low" ${ticket.priority === 'low' ? 'selected' : ''}>Low</option>
-                                    <option value="medium" ${ticket.priority === 'medium' ? 'selected' : ''}>Medium</option>
-                                    <option value="high" ${ticket.priority === 'high' ? 'selected' : ''}>High</option>
-                                    <option value="urgent" ${ticket.priority === 'urgent' ? 'selected' : ''}>Urgent</option>
-                                </select>
-                            </label>
-                        </div>
-                        <div class="control-row">
-                            <label>
-                                <span style="color: var(--text-secondary); font-size: 13px;">Assign To</span>
-                                <input type="text" id="assignInput" placeholder="@username or role" value="${escapeHtml(ticket.assignedTo || '')}">
-                            </label>
-                            <button class="btn btn-primary" onclick="assignTicket('${ticketId}', document.getElementById('assignInput').value)" style="margin-top: 20px;">
-                                <i class="fas fa-user-check"></i> Assign
-                            </button>
-                        </div>
-                        <div class="dm-toggle">
-                            <input type="checkbox" id="dmNotify" ${ticket.dmNotify ? 'checked' : ''} onchange="toggleDMNotify('${ticketId}', this.checked)">
-                            <label for="dmNotify" style="cursor: pointer; color: var(--text-secondary);">
-                                <i class="fas fa-envelope"></i> DM user on updates
-                            </label>
-                        </div>
-                    </div>
-                ` : ''}
-
-                <!-- Moderator Escalate Button -->
-                ${isMod && !ticket.escalated && !isAdmin ? `
-                    <div style="margin: 16px 0;">
-                        <button class="escalate-btn" onclick="escalateTicket('${ticketId}')">
-                            <i class="fas fa-exclamation-triangle"></i>
-                            Escalate to Admin
-                        </button>
-                    </div>
-                ` : ''}
-
-                <div class="ticket-messages" id="ticketMessages">
-                    <div class="loading">
-                        <div class="spinner"></div>
-                        <div>Loading conversation...</div>
-                    </div>
-                </div>
-
-                <div class="ticket-actions">
-                    ${ticket.status !== 'closed' ? `
-                        <button class="btn btn-danger" onclick="closeTicket('${ticketId}')">
-                            <i class="fas fa-times"></i> Close Ticket
-                        </button>
-                    ` : `
-                        <button class="btn btn-success" onclick="reopenTicket('${ticketId}')">
-                            <i class="fas fa-redo"></i> Reopen Ticket
-                        </button>
-                    `}
-                    ${isAdmin ? `
-                        <button class="btn btn-secondary" onclick="showInternalNoteModal('${ticketId}')">
-                            <i class="fas fa-sticky-note"></i> Add Internal Note
-                        </button>
-                        <button class="btn btn-secondary" onclick="exportTranscript('${ticketId}')">
-                            <i class="fas fa-download"></i> Export Transcript
-                        </button>
-                    ` : ''}
-                    <button class="btn btn-secondary" onclick="viewInDiscord('${ticket.channelId}')">
-                        <i class="fab fa-discord"></i> View in Discord
-                    </button>
                 </div>
             `;
 
+            if (isAdmin) {
+                const collapseBtn = document.getElementById('chatCollapseBtn');
+                if (collapseBtn) {
+                    const collapsed = isChatCollapsed();
+                    collapseBtn.innerHTML = collapsed
+                        ? '<i class="fas fa-expand-alt"></i> Expand'
+                        : '<i class="fas fa-compress-alt"></i> Collapse';
+                }
+            }
+
             // Load messages and notes
             loadTicketMessages(ticketId);
-            if (isAdmin) {
-                loadInternalNotes(ticketId);
+        }
+
+        function switchTicketChatTab(tab, ticketId) {
+            currentChatTab = tab === 'staff' ? 'staff' : 'customer';
+
+            const customerTab = document.getElementById('ticketChatTabCustomer');
+            const staffTab = document.getElementById('ticketChatTabStaff');
+            if (customerTab) customerTab.classList.toggle('active', currentChatTab === 'customer');
+            if (staffTab) staffTab.classList.toggle('active', currentChatTab === 'staff');
+
+            const input = document.getElementById('ticketReplyInput');
+            if (input) {
+                input.placeholder = currentChatTab === 'staff'
+                    ? 'Message admins/mods in this private staff room...'
+                    : 'Reply to the ticket user...';
+            }
+
+            if (currentChatTab === 'staff') {
+                loadStaffRoomMessages(ticketId);
+            } else {
+                loadTicketMessages(ticketId);
             }
         }
 
@@ -1013,7 +1537,7 @@
                 if (messages.length === 0) {
                     container.innerHTML = `
                         <div class="empty-state">
-                            <div class="empty-icon">??</div>
+                            <div class="empty-icon"><i class="fas fa-comment-slash"></i></div>
                             <div class="empty-title">No messages</div>
                             <div class="empty-description">This ticket has no messages yet.</div>
                         </div>
@@ -1022,21 +1546,22 @@
                 }
 
                 container.innerHTML = messages.map(msg => `
-                    <div style="padding: 1rem; background: rgba(255,255,255,0.03); border-radius: 10px; margin-bottom: 0.75rem;">
-                        <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
-                            <strong style="color: var(--accent-primary);">${escapeHtml(msg.author || 'Unknown')}</strong>
-                            <span style="color: var(--text-muted); font-size: 0.8rem;">${formatDate(msg.timestamp)}</span>
+                    <div class="message-item">
+                        <div class="message-meta">
+                            <strong class="message-author">${escapeHtml(msg.author || msg.username || msg.userName || msg.user_id || 'Unknown')}</strong>
+                            <span class="message-time">${formatDate(msg.timestamp || msg.createdAt || msg.created_at)}</span>
                         </div>
-                        <div style="color: var(--text-secondary);">${escapeHtml(msg.content || '')}</div>
+                        <div class="message-content">${escapeHtml(msg.content || msg.message || msg.text || '')}</div>
                     </div>
                 `).join('');
+                container.scrollTop = container.scrollHeight;
             } catch (error) {
                 console.error('Error loading messages:', error);
             }
         }
 
-        // Load internal notes (admin only)
-        async function loadInternalNotes(ticketId) {
+        // Load staff-room messages (admins + moderators)
+        async function loadStaffRoomMessages(ticketId) {
             try {
                 const response = await apiFetch(`/api/tickets/${ticketId}/notes`);
                 const data = await response.json();
@@ -1044,21 +1569,111 @@
                 const notes = Array.isArray(data?.notes) ? data.notes : 
                              Array.isArray(data) ? data : [];
 
-                if (notes.length > 0) {
-                    const notesHtml = notes.map(note => `
-                        <div class="internal-note">
-                            <div class="internal-note-header">
-                                <i class="fas fa-lock"></i>
-                                Internal Note - ${escapeHtml(note.author || 'Staff')} - ${formatDate(note.timestamp)}
-                            </div>
-                            <div style="color: var(--text-secondary);">${escapeHtml(note.content)}</div>
+                const container = document.getElementById('ticketMessages');
+                if (!container) return;
+
+                if (notes.length === 0) {
+                    container.innerHTML = `
+                        <div class="empty-state">
+                            <div class="empty-icon"><i class="fas fa-user-shield"></i></div>
+                            <div class="empty-title">No staff messages yet</div>
+                            <div class="empty-description">Admins and moderators can coordinate here for this ticket.</div>
                         </div>
-                    `).join('');
-                    
-                    document.getElementById('ticketMessages').insertAdjacentHTML('beforeend', notesHtml);
+                    `;
+                    return;
                 }
+
+                container.innerHTML = notes.map(note => {
+                    const role = String(note.role || note.staff_role || 'staff').toLowerCase();
+                    const roleLabel = role === 'administration' ? 'Admin' : role === 'moderation' ? 'Mod' : 'Staff';
+
+                    return `
+                        <div class="message-item staff-room-message">
+                            <div class="message-meta">
+                                <strong class="message-author">${escapeHtml(note.author || note.staff_name || note.staffName || 'Staff')}</strong>
+                                <span class="staff-role-badge">${escapeHtml(roleLabel)}</span>
+                                <span class="message-time">${formatDate(note.timestamp || note.createdAt || note.created_at)}</span>
+                            </div>
+                            <div class="message-content">${escapeHtml(note.content || note.note || note.message || '')}</div>
+                        </div>
+                    `;
+                }).join('');
+
+                container.scrollTop = container.scrollHeight;
             } catch (error) {
-                console.error('Error loading notes:', error);
+                console.error('Error loading staff room messages:', error);
+            }
+        }
+
+        async function sendTicketReply(ticketId) {
+            const input = document.getElementById('ticketReplyInput');
+            const message = input?.value?.trim();
+            if (!message) return;
+
+            try {
+                await apiFetch(`/api/tickets/${ticketId}/reply`, {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        message,
+                        staffId: currentUser?.userId || currentUser?.id || null,
+                        staffName: currentUser?.username || currentUser?.globalName || 'Staff',
+                        senderId: currentUser?.userId || currentUser?.id || null
+                    })
+                });
+
+                if (input) input.value = '';
+                await loadTicketMessages(ticketId);
+            } catch (error) {
+                alert('Failed to send reply: ' + error.message);
+            }
+        }
+
+        async function sendStaffRoomMessage(ticketId) {
+            const input = document.getElementById('ticketReplyInput');
+            const message = input?.value?.trim();
+            if (!message) return;
+
+            try {
+                await apiFetch(`/api/tickets/${ticketId}/notes`, {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        note: message,
+                        content: message,
+                        message,
+                    })
+                });
+
+                if (input) input.value = '';
+                await loadStaffRoomMessages(ticketId);
+            } catch (error) {
+                alert('Failed to send staff-room message: ' + error.message);
+            }
+        }
+
+        async function sendCurrentChatMessage(ticketId) {
+            if (currentChatTab === 'staff') {
+                await sendStaffRoomMessage(ticketId);
+                return;
+            }
+
+            await sendTicketReply(ticketId);
+        }
+
+        function toggleTicketChatPane() {
+            if (userRole !== 'administration') return;
+
+            const workspace = document.getElementById('ticketWorkspace');
+            if (!workspace) return;
+
+            const nextCollapsed = !workspace.classList.contains('chat-collapsed');
+            workspace.classList.toggle('chat-collapsed', nextCollapsed);
+            localStorage.setItem('ticketsChatCollapsed', nextCollapsed ? '1' : '0');
+
+            const btn = document.getElementById('chatCollapseBtn');
+            if (btn) {
+                btn.innerHTML = nextCollapsed
+                    ? '<i class="fas fa-expand-alt"></i> Expand'
+                    : '<i class="fas fa-compress-alt"></i> Collapse';
             }
         }
 
@@ -1113,6 +1728,20 @@
             }
         }
 
+        // Update ticket category
+        async function updateTicketCategory(ticketId, category) {
+            try {
+                await apiFetch(`/api/tickets/${ticketId}/category`, {
+                    method: 'POST',
+                    body: JSON.stringify({ category })
+                });
+                await loadTickets();
+                selectTicket(ticketId);
+            } catch (error) {
+                alert('Failed to update category: ' + error.message);
+            }
+        }
+
         // Assign ticket
         async function assignTicket(ticketId, assignTo) {
             if (!assignTo || !assignTo.trim()) {
@@ -1123,7 +1752,10 @@
             try {
                 await apiFetch(`/api/tickets/${ticketId}/assign`, {
                     method: 'POST',
-                    body: JSON.stringify({ assignTo: assignTo.trim() })
+                    body: JSON.stringify({
+                        staffId: assignTo.trim(),
+                        assignTo: assignTo.trim()
+                    })
                 });
                 await loadTickets();
                 selectTicket(ticketId);
@@ -1157,7 +1789,7 @@
             try {
                 await apiFetch(`/api/tickets/${ticketId}/notes`, {
                     method: 'POST',
-                    body: JSON.stringify({ content })
+                    body: JSON.stringify({ note: content, content })
                 });
                 selectTicket(ticketId);
             } catch (error) {
@@ -1255,7 +1887,7 @@
                 </div>
             `;
             loadTickets();
-            if (userRole === 'administration') {
+            if (canViewAnalytics()) {
                 loadAnalytics();
             }
         }

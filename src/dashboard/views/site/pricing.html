@@ -6,7 +6,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Pricing - DarkLock Security</title>
-    <meta name="description" content="Choose a DarkLock plan for Discord server security. Free setup and Pro checkout are available.">
+    <meta name="description" content="DarkLock pricing update: Pro is coming soon. For now, all features are free.">
     <link rel="stylesheet" href="/site/css/style.css">
     <link id="dynamic-theme-stylesheet" rel="stylesheet" href="/api/v4/admin/theme/css">
     <script src="/js/global-theme.js"></script>
@@ -50,9 +50,9 @@
                     <i class="fas fa-rocket"></i>
                     <span>Dashboard</span>
                 </a>
-                <a href="/payment?plan=pro" class="btn btn-primary">
+                <a href="/site/pricing?notice=free" class="btn btn-primary" id="upgradeTopBtn">
                     <i class="fas fa-credit-card"></i>
-                    <span>Upgrade to Pro</span>
+                    <span>Pro Coming Soon</span>
                 </a>
             </div>
             
@@ -70,7 +70,10 @@
             <div class="section-header">
                 <span class="section-badge">Pricing</span>
                 <h1 class="section-title">Simple Plans for Discord Security</h1>
-                <p class="section-subtitle">Start free, then upgrade a selected server through Stripe Checkout when you need Pro features.</p>
+                <p class="section-subtitle">Pro plan is coming soon! For now, all features are free.</p>
+                <div id="freeNotice" class="feature-card" style="max-width:900px;margin:1.25rem auto 0;padding:1rem 1.25rem;border:1px solid var(--accent-primary);background:rgba(107,70,255,.12)">
+                    <strong style="color:var(--accent-primary)">Pro plan is coming soon! For now, all features are free.</strong>
+                </div>
             </div>
         </div>
     </section>
@@ -95,8 +98,8 @@
                         <li><i class="fas fa-check"></i> Basic moderation tools</li>
                         <li><i class="fas fa-check"></i> Welcome messages</li>
                         <li><i class="fas fa-check"></i> Auto-roles</li>
-                        <li class="disabled"><i class="fas fa-times"></i> Pro command access</li>
-                        <li class="disabled"><i class="fas fa-times"></i> Pro-gated analytics commands</li>
+                        <li><i class="fas fa-check"></i> Advanced command access (temporarily free)</li>
+                        <li><i class="fas fa-check"></i> Analytics command access (temporarily free)</li>
                     </ul>
                     <a href="https://discord.com/api/oauth2/authorize?client_id=1439793800309379114&permissions=8&scope=bot%20applications.commands" class="btn btn-outline btn-block">Get Started Free</a>
                 </div>
@@ -107,21 +110,44 @@
                     <div class="plan-header">
                         <h3 class="plan-name">Pro</h3>
                         <div class="plan-price">
-                            <span class="price">Stripe</span>
-                            <span class="period">checkout</span>
+                            <span class="price">Coming</span>
+                            <span class="period">soon</span>
                         </div>
-                        <p class="plan-description">The live price and billing interval come from your configured Stripe Pro price.</p>
+                        <p class="plan-description">Pro billing is not live yet. All Pro-level features are currently unlocked for everyone.</p>
                     </div>
                     <ul class="plan-features">
                         <li><i class="fas fa-check"></i> Everything in Free</li>
-                        <li><i class="fas fa-check"></i> Pro-gated bot commands</li>
+                        <li><i class="fas fa-check"></i> Pro-gated bot commands (currently free)</li>
                         <li><i class="fas fa-check"></i> Anti-nuke and webhook protection commands</li>
                         <li><i class="fas fa-check"></i> Anti-phishing and automod command access</li>
                         <li><i class="fas fa-check"></i> Server backup and analytics commands</li>
                         <li><i class="fas fa-check"></i> Modmail, schedule, and trust score commands</li>
-                        <li><i class="fas fa-check"></i> Guild subscription synced from Stripe webhooks</li>
+                        <li><i class="fas fa-check"></i> Paid billing will be enabled in a future update</li>
                     </ul>
-                    <a href="/payment?plan=pro" class="btn btn-primary btn-block">Continue to Stripe</a>
+                    <a href="https://discord.com/api/oauth2/authorize?client_id=1439793800309379114&permissions=8&scope=bot%20applications.commands" class="btn btn-primary btn-block">Use Free Features Now</a>
+                </div>
+
+                <!-- Enterprise Plan -->
+                <div class="pricing-card dl-glow-card">
+                    <div class="plan-header">
+                        <h3 class="plan-name">DarkLock Enterprise</h3>
+                        <div class="plan-price">
+                            <span class="price">$50</span>
+                            <span class="period">/month</span>
+                        </div>
+                        <p class="plan-description">Full access to every feature, command, and future addition.</p>
+                    </div>
+                    <ul class="plan-features">
+                        <li><i class="fas fa-check"></i> Everything in Pro</li>
+                        <li><i class="fas fa-check"></i> Advanced analytics dashboard</li>
+                        <li><i class="fas fa-check"></i> Voice monitoring &amp; channel access control</li>
+                        <li><i class="fas fa-check"></i> Trust score system</li>
+                        <li><i class="fas fa-check"></i> Scheduled announcements</li>
+                        <li><i class="fas fa-check"></i> XP &amp; leaderboard system</li>
+                        <li><i class="fas fa-check"></i> Early access to beta features &amp; apps</li>
+                        <li><i class="fas fa-check"></i> Priority support</li>
+                    </ul>
+                    <a href="/payment" class="btn btn-outline btn-block"><i class="fas fa-crown"></i> Get Enterprise - $50/mo</a>
                 </div>
             </div>
         </div>
@@ -138,22 +164,22 @@
             <div class="faq-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: var(--space-lg); max-width: 1000px; margin: 0 auto;">
                 <div class="feature-card">
                     <h4 style="color: var(--accent-primary); margin-bottom: var(--space-sm);">Can I upgrade from the dashboard?</h4>
-                    <p style="color: var(--text-secondary);">Yes. Select the server you want to upgrade, then open the payment page and complete Stripe checkout.</p>
+                    <p style="color: var(--text-secondary);">Not yet. Pro billing is coming soon, and all features are currently free for everyone.</p>
                 </div>
                 
                 <div class="feature-card">
                     <h4 style="color: var(--accent-primary); margin-bottom: var(--space-sm);">How do I upgrade my plan?</h4>
-                    <p style="color: var(--text-secondary);">Log in, choose the server that should receive Pro, and continue to Stripe from this page or the payment page.</p>
+                    <p style="color: var(--text-secondary);">You do not need to upgrade right now. Pro plan is coming soon, and all features are free.</p>
                 </div>
                 
                 <div class="feature-card">
                     <h4 style="color: var(--accent-primary); margin-bottom: var(--space-sm);">What payment methods are accepted?</h4>
-                    <p style="color: var(--text-secondary);">We accept major credit and debit cards through Stripe. Billing and cancellation are managed from the dashboard.</p>
+                    <p style="color: var(--text-secondary);">Billing is not active yet. Stripe checkout will be enabled when Pro officially launches.</p>
                 </div>
                 
                 <div class="feature-card">
                     <h4 style="color: var(--accent-primary); margin-bottom: var(--space-sm);">Can I cancel anytime?</h4>
-                    <p style="color: var(--text-secondary);">You can manage billing through the Stripe billing portal when a billing profile exists for the selected server.</p>
+                    <p style="color: var(--text-secondary);">There is nothing to cancel right now because all features are free during this pre-launch period.</p>
                 </div>
             </div>
         </div>
@@ -164,15 +190,15 @@
         <div class="container">
             <div class="cta-content">
                 <h2>Start Protecting Your Server Today</h2>
-                <p>Get started free, then upgrade a selected server to Pro when you need the paid command set.</p>
+                <p>Get started now. Pro plan is coming soon, and all features are currently free.</p>
                 <div class="cta-buttons">
                     <a href="https://discord.com/api/oauth2/authorize?client_id=1439793800309379114&permissions=8&scope=bot%20applications.commands" class="btn btn-primary btn-lg">
                         <i class="fas fa-plus"></i>
                         <span>Add to Discord Free</span>
                     </a>
-                    <a href="/payment?plan=pro" class="btn btn-outline btn-lg">
-                        <i class="fas fa-credit-card"></i>
-                        <span>Continue to Stripe</span>
+                    <a href="/site/pricing?notice=free" class="btn btn-outline btn-lg" id="ctaProSoonBtn">
+                        <i class="fas fa-clock"></i>
+                        <span>Pro Coming Soon</span>
                     </a>
                 </div>
             </div>
@@ -234,10 +260,26 @@
     </footer>
 
     <script>
+        function showProSoonNotice(e) {
+            if (e) e.preventDefault();
+            alert('Pro plan is coming soon! For now, all features are free.');
+        }
+
         document.getElementById('navToggle').addEventListener('click', function() {
             document.getElementById('navMenu').classList.toggle('active');
             this.classList.toggle('active');
         });
+
+        const noticeParam = new URLSearchParams(window.location.search).get('notice');
+        if (noticeParam === 'free') {
+            showProSoonNotice();
+        }
+
+        const upgradeTopBtn = document.getElementById('upgradeTopBtn');
+        if (upgradeTopBtn) upgradeTopBtn.addEventListener('click', showProSoonNotice);
+
+        const ctaProSoonBtn = document.getElementById('ctaProSoonBtn');
+        if (ctaProSoonBtn) ctaProSoonBtn.addEventListener('click', showProSoonNotice);
     </script>
 </body>
 </html>

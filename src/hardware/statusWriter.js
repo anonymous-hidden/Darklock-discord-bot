@@ -62,6 +62,14 @@ class HardwareStatusWriter {
                 return; // Bot not ready yet
             }
 
+            const guildDetails = {};
+            for (const [id, g] of this.bot.client.guilds.cache) {
+                guildDetails[id] = {
+                    name: g.name,
+                    memberCount: g.memberCount,
+                    icon: g.iconURL ? g.iconURL({ size: 64 }) : null,
+                };
+            }
             const status = {
                 online: true,
                 pi5_online: true,
@@ -74,6 +82,7 @@ class HardwareStatusWriter {
                 username: this.bot.client.user.username,
                 user_id: this.bot.client.user.id,
                 guild_ids: Array.from(this.bot.client.guilds.cache.keys()),
+                guild_details: guildDetails,
             };
 
             await fs.writeFile(this.statusFile, JSON.stringify(status, null, 2));

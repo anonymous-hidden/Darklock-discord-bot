@@ -20,6 +20,16 @@ class AntiRaid {
         return await this.checkForRaid(member);
     }
 
+    // Normalize the configured detection window to milliseconds. The dashboard
+    // stores this value in seconds (e.g. 10-60); some legacy paths stored it in
+    // milliseconds (e.g. 60000). Treat small values as seconds and large values
+    // as milliseconds so every caller agrees.
+    _resolveTimeWindowMs(config) {
+        const raw = Number(config?.raid_time_window);
+        if (!Number.isFinite(raw) || raw <= 0) return 60000;
+        return raw < 1000 ? raw * 1000 : raw;
+    }
+
     async checkForRaid(member) {
         const guildId = member.guild.id;
         const now = Date.now();
@@ -31,9 +41,24 @@ class AntiRaid {
             if (!config.anti_raid_enabled && !config.antiraid_enabled) {
                 return { isRaid: false, disabled: true };
             }
-            
-            const threshold = config.raid_threshold || 10;
-            const timeWindow = 60000; // 1 minute in milliseconds
+
+            // Account age filter: block accounts younger than the configured
+            // minimum. Admin opt-in via the Anti-Raid dashboard page.
+            if (config.account_age_enabled) {
+                const minDays = Number(config.min_account_age) || 0;
+                if (minDays > 0) {
+                    const accountAgeMs = now - member.user.createdTimestamp;
+                    if (accountAgeMs < minDays * 24 * 60 * 60 * 1000) {
+                        await this.handleUnderageAccount(member, config, minDays);
+                        return { isRaid: false, disabled: false, accountBlocked: true };
+                    }
+                }
+            }
+
+            // Dashboard saves raid_join_threshold; fall back to the legacy
+            // raid_threshold column for older configs.
+            const threshold = Number(config.raid_join_threshold) || Number(config.raid_threshold) || 10;
+            const timeWindow = this._resolveTimeWindowMs(config);
             
             // Get or initialize join times for this guild
             let joinTimes = this.joinTimes.get(guildId) || [];
@@ -68,6 +93,112 @@ class AntiRaid {
         }
     }
 
+    // Normalize the configured raid response to a known action. Defaults to the
+    // safe 'quarantine' action for new/unset configs. Legacy 'notify' maps to
+    // 'alert_only'. Never defaults to an aggressive action (kick/ban/lockdown).
+    _resolveRaidAction(config) {
+        let a = (config?.raid_action || 'quarantine').toString().toLowerCase().trim();
+        if (a === 'notify' || a === 'alert' || a === 'notify_only') a = 'alert_only';
+        const allowed = ['alert_only', 'verify', 'quarantine', 'kick', 'ban', 'lockdown'];
+        return allowed.includes(a) ? a : 'quarantine';
+    }
+
+    // Member-scoped quarantine: timeout the joiners and flag them, WITHOUT
+    // locking the whole server. This is the safe default raid response.
+    async quarantineRaidUsers(guild, joinTimes, raidData) {
+        // Best-effort marker role so moderators can spot quarantined accounts.
+        let qRole = guild.roles.cache.find(r => r.name === 'Quarantine');
+        if (!qRole) {
+            qRole = await guild.roles.create({
+                name: 'Quarantine',
+                color: 0x2f3136,
+                permissions: [],
+                reason: 'Anti-raid quarantine role'
+            }).catch(() => null);
+        }
+        const timeoutMs = 60 * 60 * 1000; // 1 hour, auto-expires for review
+        for (const joinData of joinTimes) {
+            try {
+                const member = await guild.members.fetch(joinData.userId).catch(() => null);
+                if (!member) continue;
+                // Timeout is the enforcement; role + flag are markers.
+                await member.timeout(timeoutMs, `Anti-raid quarantine: ${raidData?.patternType || 'raid'}`).catch(() => {});
+                if (qRole) await member.roles.add(qRole, 'Anti-raid quarantine').catch(() => {});
+                await this.bot.database.createOrUpdateUserRecord?.(guild.id, joinData.userId, {
+                    flags: JSON.stringify({ raidParticipant: true, raidType: raidData?.patternType }),
+                    trust_score: 10,
+                    verification_status: 'quarantined'
+                }).catch(() => {});
+                await this.bot.database.run(`
+                    INSERT INTO mod_actions
+                    (guild_id, action_type, target_user_id, moderator_id, reason, active)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                `, [guild.id, 'QUARANTINE', joinData.userId, this.bot.client.user.id,
+                    `Raid detection: ${raidData?.patternType || 'raid'}`, 1]).catch(() => {});
+            } catch (e) {
+                this.bot.logger?.warn?.(`Quarantine failed for ${joinData.userId}: ${e.message}`);
+            }
+        }
+    }
+
+    // Route joiners to verification by assigning the configured unverified role.
+    // Falls back to member quarantine when no verification role is configured.
+    async verifyRaidUsers(guild, joinTimes) {
+        const config = await this.bot.database.getGuildConfig(guild.id);
+        const role = config.unverified_role_id ? guild.roles.cache.get(config.unverified_role_id) : null;
+        if (!role) {
+            return this.quarantineRaidUsers(guild, joinTimes, { patternType: 'raid' });
+        }
+        for (const joinData of joinTimes) {
+            const member = await guild.members.fetch(joinData.userId).catch(() => null);
+            if (member) await member.roles.add(role, 'Anti-raid: pending verification').catch(() => {});
+        }
+    }
+
+    // Enforce the account-age filter on a single joining member, honoring the
+    // configured raid_action. The safe default (quarantine) never kicks/bans.
+    async handleUnderageAccount(member, config, minDays) {
+        const action = this._resolveRaidAction(config);
+        try {
+            if (action === 'kick') {
+                await member.kick(`Account younger than ${minDays} day(s) minimum`).catch(() => {});
+            } else if (action === 'ban') {
+                await member.ban({ reason: `Account younger than ${minDays} day(s) minimum` }).catch(() => {});
+            } else if (action === 'verify') {
+                await this.verifyRaidUsers(member.guild, [{ userId: member.user.id }]);
+            } else if (action === 'alert_only') {
+                this.bot.logger?.security?.(`⏳ Underage account ${member.user.tag} joined ${member.guild.name} (min ${minDays}d) — alert only`);
+            } else {
+                // quarantine / lockdown → restrict the account (no removal).
+                await this.quarantineRaidUsers(member.guild, [{ userId: member.user.id }], { patternType: 'account_age' });
+            }
+            await this.bot.database.logSecurityIncident?.(member.guild.id, 'ACCOUNT_AGE_BLOCK', 'MEDIUM', {
+                userId: member.user.id,
+                minAccountAgeDays: minDays,
+                action
+            });
+        } catch (e) {
+            this.bot.logger?.warn?.(`Account age enforcement failed for ${member.user?.id}: ${e.message}`);
+        }
+    }
+
+    // Kick or ban every member that joined inside the raid window.
+    async punishRaidUsers(guild, joinTimes, action) {
+        for (const joinData of joinTimes) {
+            try {
+                const member = await guild.members.fetch(joinData.userId).catch(() => null);
+                if (!member) continue;
+                if (action === 'ban') {
+                    await member.ban({ reason: 'Raid detection: mass join' }).catch(() => {});
+                } else {
+                    await member.kick('Raid detection: mass join').catch(() => {});
+                }
+            } catch (e) {
+                this.bot.logger?.warn?.(`Failed to ${action} raid user ${joinData.userId}: ${e.message}`);
+            }
+        }
+    }
+
     async handleRaidDetection(guild, joinTimes) {
         const guildId = guild.id;
         
@@ -99,17 +230,35 @@ class AntiRaid {
             
             // Get guild config for response actions
             const config = await this.bot.database.getGuildConfig(guildId);
-            
-            // Activate lockdown if enabled (check both field names)
-            if (config.anti_raid_enabled || config.antiraid_enabled) {
-                await this.activateLockdown(guild, raidData, config);
+            const raidAction = this._resolveRaidAction(config);
+
+            // Honor the configured raid response. The default (quarantine) is
+            // member-scoped and never locks the whole server.
+            switch (raidAction) {
+                case 'alert_only':
+                    // Notify moderators only — no automated action taken.
+                    break;
+                case 'kick':
+                case 'ban':
+                    await this.punishRaidUsers(guild, joinTimes, raidAction);
+                    break;
+                case 'verify':
+                    await this.verifyRaidUsers(guild, joinTimes);
+                    break;
+                case 'lockdown':
+                    if (config.anti_raid_enabled || config.antiraid_enabled) {
+                        await this.activateLockdown(guild, raidData, config);
+                    }
+                    await this.handleRaidUsers(guild, joinTimes, raidData);
+                    break;
+                case 'quarantine':
+                default:
+                    await this.quarantineRaidUsers(guild, joinTimes, raidData);
+                    break;
             }
-            
-            // Handle raid users
-            await this.handleRaidUsers(guild, joinTimes, raidData);
-            
-            // Notify moderators
-            await this.notifyModerators(guild, raidData, joinTimes);
+
+            // Notify moderators (always)
+            await this.notifyModerators(guild, raidData, joinTimes, raidAction);
             
             // Emit security event to dashboard
             if (this.bot.eventEmitter) {
@@ -350,9 +499,20 @@ class AntiRaid {
         }
     }
 
-    async notifyModerators(guild, raidData, joinTimes) {
+    async notifyModerators(guild, raidData, joinTimes, action = 'quarantine') {
         try {
             const config = await this.bot.database.getGuildConfig(guild.id);
+            
+            // Human-readable summary of the action that was actually taken.
+            const actionLabels = {
+                alert_only: '🔔 Moderators alerted (no automated action)',
+                verify: '🕓 Joiners sent to verification',
+                quarantine: '🔒 Joiners quarantined (timed out)',
+                kick: '👢 Joiners kicked',
+                ban: '🔨 Joiners banned',
+                lockdown: '🔒 Server lockdown + joiners quarantined'
+            };
+            const actionsTaken = actionLabels[action] || actionLabels.alert_only;
             
             // Find mod/admin roles
             const modRole = config.mod_role_id ? guild.roles.cache.get(config.mod_role_id) : null;
@@ -380,7 +540,7 @@ class AntiRaid {
                         },
                         {
                             name: '🛡️ Actions Taken',
-                            value: `✅ Lockdown activated\n✅ Users quarantined\n✅ Restrictions applied`,
+                            value: actionsTaken,
                             inline: false
                         }
                     ],

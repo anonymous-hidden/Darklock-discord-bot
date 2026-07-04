@@ -102,6 +102,14 @@ async function connectPico() {
         // After the port opens, the USB DTR toggle may have sent Ctrl+C to the
         // Pico, killing the running firmware. Send PING after 1.5s to give it
         // time to restart; the firmware responds with PONG + READY:ROOMCTRL.
+        // Guard: if no READY:ROOMCTRL within 8s, this is the wrong device —
+        // release the port and retry so the RFID hub Pico is never stolen.
+        const wrongDeviceTimer = setTimeout(() => {
+            if (!picoReady && port && port.isOpen) {
+                console.warn('[RoomBridge] No READY:ROOMCTRL within 8s — wrong device, releasing port');
+                port.close();
+            }
+        }, 8000);
         setTimeout(() => {
             if (port && port.isOpen) {
                 port.write('PING\n', (e) => {
@@ -109,12 +117,20 @@ async function connectPico() {
                 });
             }
         }, 1500);
+        port.once('close', () => clearTimeout(wrongDeviceTimer));
     });
     parser = port.pipe(new ReadlineParser({ delimiter: '\n' }));
 
     parser.on('data', (line) => {
         line = String(line).trim();
         if (!line) return;
+        // If the connected device responds with JSON it is the RFID hub Pico —
+        // not the room-control firmware. Release the port immediately.
+        if (line.startsWith('{')) {
+            console.warn('[RoomBridge] RFID hub Pico detected on this port — releasing, will retry');
+            if (port && port.isOpen) port.close();
+            return;
+        }
         if (line === 'READY:ROOMCTRL') {
             picoReady = true;
             console.log('[RoomBridge] Pico firmware ready');

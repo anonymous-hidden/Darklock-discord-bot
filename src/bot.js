@@ -5,12 +5,12 @@
     const _path = require('path');
     const _crypto = require('crypto');
     const REQUIRED = {
-        "../file-protection/index.js": "48eab394765491a34ef7c8d8de4504c7b887f1aedf0c36f0203e247cb880eab6",
+        "../file-protection/index.js": "cd04ba7c97aed1a2058d77f3523cee0b25a1176e8f9dbdb9b8d9e1be6f3694e2",
         "../file-protection/agent/watcher.js": "a468e4d3d470ff5dda094bbe83b251b811c07f6f01048961bf4f3078c2badeee",
         "../file-protection/agent/validator.js": "df803b1329264fb28b26f1772392a98aa25ff6dd0a62329fdf96ce6769124ec6",
         "../file-protection/agent/baseline-manager.js": "7a1d2ef23cab7de954279f2cd3a7045a0e6ebcba260fe60e8587b43173ac68be",
         "../file-protection/agent/protector.js": "baec13203d3efbf16d8a80cfdcf3edd60f54c27f6dbb72510e09d37667ff80f7",
-        "../file-protection/agent/response-handler.js": "39473a827e2982901b725abd42698002292ad5b2f74cad10799196d41a310e17",
+        "../file-protection/agent/response-handler.js": "bb4eb4686565dbd0024fa93cdba13bcf3921bbd0d7990e3074fd4a8ca9bd62a6",
         "../file-protection/agent/file-enumerator.js": "ec90cb0812b7a1fba628e03ebf3faa57c66db18f0e6268f10f386dab54ec2752",
         "../file-protection/agent/environment-guard.js": "80779afb4f2173fb95e13ec6f3d074f3adcb5ca4a1868cd0832a33373ae6d6f1",
         "../file-protection/agent/hasher.js": "34ad46b31b89b845f300c7548b8d1da161df0aa78b65c919536bc058c55145ca",
@@ -122,6 +122,7 @@ const ToxicityFilter = require('./security/toxicity');
 const BehaviorDetection = require('./security/behavior');
 const WordFilterEngine = require('./security/WordFilterEngine');
 const setupAuditWatcher = require('./security/auditWatcher');
+const MultiServerModeration = require('./security/multiServerModeration');
 
 // Import utility modules
 const BackupManager = require('./utils/backup');
@@ -280,10 +281,10 @@ class SecurityBot {
         this.verificationService = null;
 
         // Plan gating map for premium features
+        // Whole-command plan gates. Basic security/tickets/analytics/XP stay FREE;
+        // only advanced config / chart-building / admin tooling is gated. Finer-grained
+        // per-subcommand gating lives in this.subcommandPlanRequirements below.
         this.planRequirements = {
-            analytics: 'pro',
-            antinuke: 'pro',
-            security: 'pro',
             backup: 'pro',
             ticket_ai_summarize: 'pro',
             // High-level configuration/admin commands behind Pro
@@ -297,9 +298,40 @@ class SecurityBot {
             wizard: 'pro',
             onboarding: 'pro',
             reactionroles: 'pro',
-            channelaccess: 'pro',
-            voicemonitor: 'pro',
-            xp: 'pro'
+            // Enterprise-only control plane commands
+            channelaccess: 'enterprise',
+            xp: 'pro',
+            // Highest-tier (Enterprise) commands
+            voicemonitor: 'enterprise',
+            trustscore: 'enterprise',
+            schedule: 'enterprise',
+            announce: 'enterprise',
+            announcements: 'enterprise'
+        };
+
+        // Fine-grained subcommand gating. Basic/view subcommands stay FREE; only the
+        // advanced "config" / chart / export actions require an upgrade.
+        // Keys may be a plain subcommand name ('config'), 'group.sub', 'group.*', or '*'.
+        this.subcommandPlanRequirements = {
+            // /antinuke advanced controls → Pro (enable/disable/status stay Free)
+            antinuke: {
+                whitelist: 'pro',
+                unwhitelist: 'pro',
+                quarantine: 'pro',
+                restore: 'pro',
+                settings: 'pro',
+                config: 'pro'
+            },
+            // /anti-raid settings tuning is Pro (on/off remain Free)
+            'anti-raid': { settings: 'pro' },
+            // /emojispam advanced setup/config and whitelist tooling is Pro
+            emojispam: {
+                setup: 'pro',
+                config: 'pro',
+                whitelist: 'pro'
+            },
+            // /analytics chart building / exports → Pro (basic views stay Free)
+            analytics: { export: 'pro', report: 'pro' }
         };
 
         // Per-guild console buffer: guildId -> entries (max 5000 per guild)
@@ -456,6 +488,9 @@ class SecurityBot {
             this.toxicityFilter = new ToxicityFilter(this);
             this.behaviorDetection = new BehaviorDetection(this);
             this.antiNukeManager = new AntiNukeManager(this);
+            // Multi-server moderation (Enterprise): linked moderation networks
+            this.multiServerModeration = new MultiServerModeration(this);
+            this.logger.info('   ✅ Multi-server moderation module loaded');
             
             // Initialize Word Filter Engine
             this.wordFilter = new WordFilterEngine(this);
@@ -1025,8 +1060,17 @@ class SecurityBot {
             if (process.env.ENABLE_WEB_DASHBOARD === 'true') {
                 // Prefer platform-assigned PORT, then DASHBOARD_PORT, then WEB_PORT, then fallback to 3001
                 const port = process.env.PORT || process.env.DASHBOARD_PORT || process.env.WEB_PORT || 3001;
-                await this.dashboard.start(port);
-                this.logger.info(`🌐 Dashboard started on http://localhost:${port}`);
+                try {
+                    await this.dashboard.start(port);
+                    this.logger.info(`🌐 Dashboard started on http://localhost:${port}`);
+                } catch (error) {
+                    const isAddrInUse = String(error?.message || '').includes('EADDRINUSE');
+                    if (isAddrInUse) {
+                        this.logger.warn(`⚠️ Dashboard port ${port} already in use; continuing without embedded dashboard.`);
+                    } else {
+                        this.logger.warn(`⚠️ Failed to start embedded dashboard: ${error?.message || error}`);
+                    }
+                }
             }
             
             // Start XP Web Dashboard
@@ -1226,19 +1270,11 @@ class SecurityBot {
                         return await interaction.reply({ content: '❌ This feature is disabled in this server.', flags: MessageFlags.Ephemeral });
                     }
 
-                    // Plan-based gating
+                    // Plan-based gating (Free / Pro / Enterprise) — single authority
                     if (interaction.guild) {
-                        const requiredPlan = command.requiredPlan || this.planRequirements?.[command.data?.name];
-                        if (requiredPlan === 'pro') {
-                            const hasPro = await this.hasProFeatures(interaction.guild.id);
-                            if (!hasPro) {
-                                return await interaction.reply('❌ This feature requires the **Pro plan**.');
-                            }
-                        } else if (requiredPlan === 'enterprise') {
-                            const hasPro = await this.hasProFeatures(interaction.guild.id);
-                            if (!hasPro) {
-                                return await interaction.reply('❌ This feature requires the **Pro plan**.');
-                            }
+                        const access = await this.checkCommandPlanAccess(interaction, command);
+                        if (!access.allowed) {
+                            return await interaction.reply({ content: access.message, flags: MessageFlags.Ephemeral });
                         }
                     }
 
@@ -1273,29 +1309,8 @@ class SecurityBot {
                         }
                     }
 
-                    // Premium tier gating: command.premium = 'pro' | 'enterprise' | true (= 'pro')
-                    if (interaction.guild && command.premium) {
-                        try {
-                            const { resolveGuildTier } = require('./services/tier-enforcement');
-                            const tier = await resolveGuildTier(this, interaction.guild.id);
-                            const required = command.premium === true ? 'pro' : String(command.premium);
-                            const effectiveRequired = required === 'enterprise' ? 'pro' : required;
-                            const rank = { free: 0, pro: 1, enterprise: 2 };
-                            if ((rank[tier] || 0) < (rank[effectiveRequired] || 0)) {
-                                return await interaction.reply({
-                                    content: `🔒 **\`/${interaction.commandName}\` is a Pro command.**\nUpgrade your server's plan at https://darklock.net/site/pricing to unlock it.`,
-                                    flags: MessageFlags.Ephemeral
-                                });
-                            }
-                        } catch (e) {
-                            await this.logger.logError({
-                                error: e,
-                                context: 'premium_gate_check',
-                                guildId: interaction.guild.id,
-                                userId: interaction.user.id
-                            });
-                        }
-                    }
+                    // Premium tier gating is handled by checkCommandPlanAccess() above,
+                    // which also honors per-command `command.premium` flags.
 
                     // Track command usage for analytics
                     if (this.eventEmitter && interaction.guild) {
@@ -1452,6 +1467,13 @@ class SecurityBot {
                             }
                         }
 
+                        // Handle multi-server moderation link approve/deny buttons.
+                        // Authorization is enforced inside the handler (target-guild admin only).
+                        if (interaction.customId.startsWith('msmod_link_') && this.multiServerModeration) {
+                            await this.multiServerModeration.handleLinkButton(interaction);
+                            return true;
+                        }
+
                         // Handle verification through enterprise VerificationService
                         if ((interaction.customId === 'verify_button' || interaction.customId.startsWith('verify_method_')) && this.verificationService) {
                             await this.verificationService.handleVerifyButton(interaction);
@@ -1606,6 +1628,12 @@ class SecurityBot {
                         await this.enhancedTicketManager.handleTicketButton(interaction);
                     }
                 }
+                // Handle ticket creation selector menus (category/priority)
+                else if (interaction.customId === 'ticket_create_category_select' || interaction.customId === 'ticket_create_priority_select') {
+                    if (this.ticketSystem && typeof this.ticketSystem.handleCreateSelection === 'function') {
+                        await this.ticketSystem.handleCreateSelection(interaction);
+                    }
+                }
                 // Handle settings category selection
                 else if (interaction.customId === 'settings_category_select') {
                     if (this.settingsManager) {
@@ -1692,6 +1720,34 @@ class SecurityBot {
                 } else if (interaction.customId === 'ticket_create_modal') {
                     if (this.ticketSystem) {
                         await this.ticketSystem.handleModalSubmit(interaction);
+                    }
+                } else if (interaction.customId.startsWith('appeal_modal_')) {
+                    if (!this.appealSystem) {
+                        return interaction.reply({ content: '❌ Appeal system is not available.', flags: MessageFlags.Ephemeral });
+                    }
+
+                    const guildId = interaction.customId.replace('appeal_modal_', '');
+                    const appealReason = interaction.fields.getTextInputValue('appeal_reason');
+                    const additionalInfo = interaction.fields.fields.has('additional_info')
+                        ? interaction.fields.getTextInputValue('additional_info')
+                        : '';
+
+                    const result = await this.appealSystem.submitAppeal(guildId, interaction.user.id, {
+                        appealReason,
+                        additionalInfo,
+                        banReason: null
+                    });
+
+                    if (result.success) {
+                        await interaction.reply({
+                            content: `✅ Your appeal has been submitted (Appeal #${result.appealId}). Staff will review it soon.`,
+                            flags: MessageFlags.Ephemeral
+                        });
+                    } else {
+                        await interaction.reply({
+                            content: `❌ ${result.error}`,
+                            flags: MessageFlags.Ephemeral
+                        });
                     }
                 } else if (interaction.customId === 'help-modal') {
                     await this.handleHelpModal(interaction);
@@ -1929,6 +1985,11 @@ class SecurityBot {
                         }
                     });
                 }
+
+                // Multi-server moderation: alert if a watchlisted user joins.
+                if (this.multiServerModeration && typeof this.multiServerModeration.handleMemberJoin === 'function') {
+                    this.multiServerModeration.handleMemberJoin(member).catch(() => {});
+                }
                 
                 // NEW: Security Manager join check
                 if (this.securityManager) {
@@ -2164,7 +2225,22 @@ class SecurityBot {
                 // User was just timed out
                 if (!wasTimedOut && isTimedOut) {
                     this.logger.info(`🔇 Timeout detected: ${newMember.user.username} in ${newMember.guild.name}`);
-                    
+
+                    // Multi-server moderation: propagate timeout across the network.
+                    // The manager's loop guard prevents re-propagating our own timeouts.
+                    if (this.multiServerModeration) {
+                        const durationMs = new Date(isTimedOut).getTime() - Date.now();
+                        this.multiServerModeration.propagateAction({
+                            originGuildId: newMember.guild.id,
+                            actionType: 'timeout',
+                            targetUserId: newMember.id,
+                            targetUserTag: newMember.user?.tag || null,
+                            moderatorId: 'unknown',
+                            reason: 'Synced timeout',
+                            durationMs: durationMs > 0 ? durationMs : null
+                        }).catch(() => {});
+                    }
+
                     const timeoutUntil = new Date(isTimedOut);
                     const duration = Math.round((timeoutUntil - Date.now()) / 1000 / 60); // minutes
                     const audit = this.discordLogger
@@ -2351,6 +2427,19 @@ class SecurityBot {
             try {
                 await this.handleBanAdd(ban);
                 if (this.discordLogger) await this.discordLogger.logBanEvent(ban, 'ban').catch(() => {});
+
+                // Multi-server moderation: propagate the ban across the network.
+                // The manager's loop guard + reason-prefix check prevent echo loops.
+                if (this.multiServerModeration && ban?.guild?.id && ban?.user?.id) {
+                    this.multiServerModeration.propagateAction({
+                        originGuildId: ban.guild.id,
+                        actionType: 'ban',
+                        targetUserId: ban.user.id,
+                        targetUserTag: ban.user?.tag || null,
+                        moderatorId: 'unknown',
+                        reason: ban.reason || null
+                    }).catch(() => {});
+                }
             } catch (error) {
                 this.logger.error('Error handling guildBanAdd:', error);
             }
@@ -2359,6 +2448,19 @@ class SecurityBot {
         this.client.on('guildBanRemove', async (ban) => {
             try {
                 if (this.discordLogger) await this.discordLogger.logBanEvent(ban, 'unban').catch(() => {});
+
+                // Multi-server moderation: propagate the unban across the network
+                // to servers that opted into unban sync. Loop-guarded like bans.
+                if (this.multiServerModeration && ban?.guild?.id && ban?.user?.id) {
+                    this.multiServerModeration.propagateAction({
+                        originGuildId: ban.guild.id,
+                        actionType: 'unban',
+                        targetUserId: ban.user.id,
+                        targetUserTag: ban.user?.tag || null,
+                        moderatorId: 'unknown',
+                        reason: ban.reason || null
+                    }).catch(() => {});
+                }
             } catch (error) {
                 this.logger.error('Error handling guildBanRemove:', error);
             }
@@ -2601,6 +2703,12 @@ class SecurityBot {
                         await this.ticketSystem.handleCreateButton(interaction);
                     }
                     break;
+
+                case 'ticket_create_open_modal':
+                    if (this.ticketSystem && typeof this.ticketSystem.handleCreateContinue === 'function') {
+                        await this.ticketSystem.handleCreateContinue(interaction);
+                    }
+                    break;
                 
                 case 'ticket_claim':
                     if (this.ticketSystem) {
@@ -2616,6 +2724,87 @@ class SecurityBot {
 
                 // Spam action buttons
                 default:
+                    if (customId.startsWith('appeal_submit_')) {
+                        if (!this.appealSystem) {
+                            return interaction.reply({ content: '❌ Appeal system is not available.', flags: MessageFlags.Ephemeral });
+                        }
+
+                        const guildId = customId.replace('appeal_submit_', '');
+                        const { allowed, reason } = await this.appealSystem.canSubmitAppeal(guildId, interaction.user.id);
+                        if (!allowed) {
+                            return interaction.reply({ content: `❌ ${reason}`, flags: MessageFlags.Ephemeral });
+                        }
+
+                        const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder } = require('discord.js');
+
+                        const modal = new ModalBuilder()
+                            .setCustomId(`appeal_modal_${guildId}`)
+                            .setTitle('Ban Appeal');
+
+                        const reasonInput = new TextInputBuilder()
+                            .setCustomId('appeal_reason')
+                            .setLabel('Why should your ban be lifted?')
+                            .setStyle(TextInputStyle.Paragraph)
+                            .setPlaceholder('Explain why you believe you should be unbanned...')
+                            .setRequired(true)
+                            .setMaxLength(1000);
+
+                        const additionalInput = new TextInputBuilder()
+                            .setCustomId('additional_info')
+                            .setLabel('Additional information (optional)')
+                            .setStyle(TextInputStyle.Paragraph)
+                            .setPlaceholder('Any extra context to support your appeal...')
+                            .setRequired(false)
+                            .setMaxLength(500);
+
+                        modal.addComponents(
+                            new ActionRowBuilder().addComponents(reasonInput),
+                            new ActionRowBuilder().addComponents(additionalInput)
+                        );
+
+                        await interaction.showModal(modal);
+                        return;
+                    }
+
+                    if (customId.startsWith('appeal_approve_') || customId.startsWith('appeal_deny_')) {
+                        if (!this.appealSystem) {
+                            return interaction.reply({ content: '❌ Appeal system is not available.', flags: MessageFlags.Ephemeral });
+                        }
+
+                        if (!interaction.member.permissions.has(PermissionFlagsBits.BanMembers)) {
+                            return interaction.reply({ content: '❌ You need Ban Members permission.', flags: MessageFlags.Ephemeral });
+                        }
+
+                        const appealId = parseInt(customId.split('_').pop(), 10);
+                        if (!Number.isFinite(appealId)) {
+                            return interaction.reply({ content: '❌ Invalid appeal ID.', flags: MessageFlags.Ephemeral });
+                        }
+
+                        if (customId.startsWith('appeal_approve_')) {
+                            const result = await this.appealSystem.approveAppeal(appealId, interaction.user.id);
+                            if (result.success) {
+                                await interaction.update({ content: `✅ Appeal #${appealId} approved by ${interaction.user.username}`, components: [] });
+                            } else {
+                                await interaction.reply({ content: `❌ ${result.error}`, flags: MessageFlags.Ephemeral });
+                            }
+                            return;
+                        }
+
+                        const result = await this.appealSystem.denyAppeal(appealId, interaction.user.id);
+                        if (result.success) {
+                            await interaction.update({ content: `❌ Appeal #${appealId} denied by ${interaction.user.username}`, components: [] });
+                        } else {
+                            await interaction.reply({ content: `❌ ${result.error}`, flags: MessageFlags.Ephemeral });
+                        }
+                        return;
+                    }
+
+                    if (customId.startsWith('appeal_info_')) {
+                        const appealId = customId.replace('appeal_info_', '');
+                        await interaction.reply({ content: `📝 Use /appeal view id:${appealId} to review full details.`, flags: MessageFlags.Ephemeral });
+                        return;
+                    }
+
                     // Check if it's a spam action button
                     if (customId.startsWith('spam_')) {
                         await this.handleSpamAction(interaction);
@@ -2963,7 +3152,8 @@ class SecurityBot {
 
     isSubscriptionActive(record) {
         if (!record) return false;
-        if (record.status !== 'active') return false;
+        const status = String(record.status || '').toLowerCase();
+        if (!['active', 'trialing'].includes(status)) return false;
         if (record.current_period_end && record.current_period_end <= Math.floor(Date.now() / 1000)) {
             return false;
         }
@@ -2973,12 +3163,33 @@ class SecurityBot {
     async getGuildPlan(guildId) {
         const now = Math.floor(Date.now() / 1000);
         try {
-            const record = await this.database.getGuildSubscription(guildId);
-            let status = record?.status || 'inactive';
-            if (status === 'active' && record?.current_period_end && record.current_period_end <= now) {
+            let record = await this.database.getGuildSubscription(guildId);
+            // Fallback for environments where guild subscription sync lagged.
+            // getGuildSubscription auto-creates a free/inactive row, so we must
+            // still consult Stripe rows when the current record is not active.
+            const recordStatus = String(record?.status || '').toLowerCase();
+            const needsStripeFallback = !record || !['active', 'trialing'].includes(recordStatus);
+            if (needsStripeFallback) {
+                try {
+                    const stripeRow = await this.database.get(
+                        `SELECT guild_id, plan_type as plan, status, current_period_end,
+                                customer_id as stripe_customer_id, subscription_id as stripe_subscription_id
+                         FROM stripe_subscriptions
+                         WHERE guild_id = ?
+                           AND status IN ('active', 'trialing')
+                           AND (current_period_end IS NULL OR current_period_end > ?)
+                         ORDER BY updated_at DESC, created_at DESC
+                         LIMIT 1`,
+                        [guildId, now]
+                    );
+                    if (stripeRow) record = stripeRow;
+                } catch (_) {}
+            }
+            let status = String(record?.status || 'inactive').toLowerCase();
+            if (['active', 'trialing'].includes(status) && record?.current_period_end && record.current_period_end <= now) {
                 status = 'inactive';
             }
-            const isActive = status === 'active';
+            const isActive = ['active', 'trialing'].includes(status);
             const plan = record?.plan || 'free';
 
             if (isActive) {
@@ -2994,50 +3205,66 @@ class SecurityBot {
                 };
             }
 
-            // No active subscription for this guild — check if the guild owner has an
-            // active subscription on any other guild they own (handles newly-added guilds).
+            // No active subscription for this guild.
+            // IMPORTANT: Pro is per-server and must NEVER be inherited across guilds.
+            // Only Enterprise may apply across all owner guilds.
             if (this.client) {
                 const guild = this.client.guilds.cache.get(guildId);
                 if (guild?.ownerId) {
-                    const tierRank = { free: 0, pro: 1, enterprise: 2 };
-                    let bestPlan = null;
-                    let bestRank = 0;
+                    // Admin-granted user-wide Enterprise for the guild owner covers every server.
+                    try {
+                        const ownerManual = await this.database.getManualUserPlan?.(guild.ownerId);
+                        if (ownerManual === 'enterprise') {
+                            this.logger?.info(`[Paywall] Guild ${guildId} covered by owner ${guild.ownerId}'s manual Enterprise grant`);
+                            return {
+                                guild_id: guildId,
+                                plan: 'enterprise',
+                                effectivePlan: 'enterprise',
+                                status: 'active',
+                                current_period_end: null,
+                                stripe_customer_id: null,
+                                stripe_subscription_id: null,
+                                is_active: true
+                            };
+                        }
+                    } catch { /* skip */ }
+
                     const ownerGuilds = this.client.guilds.cache.filter(g => g.ownerId === guild.ownerId && g.id !== guildId);
                     for (const [, ownerGuild] of ownerGuilds) {
                         try {
                             const ownerRecord = await this.database.getGuildSubscription(ownerGuild.id);
-                            if (!ownerRecord || ownerRecord.status !== 'active') continue;
+                            const ownerStatus = String(ownerRecord?.status || '').toLowerCase();
+                            if (!ownerRecord || !['active', 'trialing'].includes(ownerStatus)) continue;
                             if (ownerRecord.current_period_end && ownerRecord.current_period_end <= now) continue;
-                            const rank = tierRank[ownerRecord.plan] || 0;
-                            if (rank > bestRank) {
-                                bestRank = rank;
-                                bestPlan = ownerRecord.plan;
+                            if (ownerRecord.plan === 'enterprise') {
+                                this.logger?.info(`[Paywall] Guild ${guildId} covered by owner's enterprise guild plan from ${ownerGuild.id}`);
+                                return {
+                                    guild_id: guildId,
+                                    plan: 'enterprise',
+                                    effectivePlan: 'enterprise',
+                                    status: 'active',
+                                    current_period_end: null,
+                                    stripe_customer_id: null,
+                                    stripe_subscription_id: ownerRecord.stripe_subscription_id || null,
+                                    is_active: true
+                                };
                             }
                         } catch { /* skip */ }
-                    }
-                    if (bestPlan && bestPlan !== 'free') {
-                        this.logger?.info(`[Paywall] Guild ${guildId} inheriting '${bestPlan}' plan from owner ${guild.ownerId}`);
-                        return {
-                            guild_id: guildId,
-                            plan: bestPlan,
-                            effectivePlan: bestPlan,
-                            status: 'active',
-                            current_period_end: null,
-                            stripe_customer_id: null,
-                            stripe_subscription_id: null,
-                            is_active: true
-                        };
                     }
 
                     // Check for user-wide enterprise subscription owned by the guild owner
                     // Covers guilds not present at webhook time (joined after purchase)
                     try {
                         const ownerEnterprise = await this.database.get(
-                            `SELECT subscription_id FROM stripe_subscriptions
-                             WHERE user_id = ? AND plan_type = 'enterprise' AND status IN ('active', 'trialing')
-                             AND (current_period_end IS NULL OR current_period_end > ?)
+                            `SELECT ss.subscription_id
+                             FROM stripe_subscriptions ss
+                             LEFT JOIN users u ON (u.id = ss.user_id OR u.email = ss.customer_email)
+                             WHERE (ss.user_id = ? OR u.discord_id = ? OR u.id = ?)
+                               AND ss.plan_type = 'enterprise'
+                               AND ss.status IN ('active', 'trialing')
+                               AND (ss.current_period_end IS NULL OR ss.current_period_end > ?)
                              LIMIT 1`,
-                            [guild.ownerId, now]
+                            [guild.ownerId, guild.ownerId, guild.ownerId, now]
                         );
                         if (ownerEnterprise) {
                             this.logger?.info(`[Paywall] Guild ${guildId} covered by owner ${guild.ownerId}'s enterprise subscription`);
@@ -3087,7 +3314,101 @@ class SecurityBot {
     }
 
     async hasEnterpriseFeatures(guildId) {
-        return this.hasProFeatures(guildId);
+        const plan = await this.getGuildPlan(guildId);
+        return Boolean(plan?.is_active && (plan.effectivePlan || plan.plan) === 'enterprise');
+    }
+
+    async hasUserEnterpriseSubscription(userId) {
+        if (!userId || !this.database?.get) return false;
+
+        const now = Math.floor(Date.now() / 1000);
+        try {
+            const row = await this.database.get(
+                `SELECT ss.subscription_id
+                 FROM stripe_subscriptions ss
+                 LEFT JOIN users u ON (u.id = ss.user_id OR u.email = ss.customer_email)
+                 WHERE (ss.user_id = ? OR u.discord_id = ? OR u.id = ?)
+                   AND ss.plan_type = 'enterprise'
+                   AND ss.status IN ('active', 'trialing')
+                   AND (ss.current_period_end IS NULL OR ss.current_period_end > ?)
+                 LIMIT 1`,
+                [userId, userId, userId, now]
+            );
+            return Boolean(row);
+        } catch (error) {
+            this.logger?.warn?.('User enterprise lookup failed:', error.message || error);
+            return false;
+        }
+    }
+
+    /**
+     * Resolve the plan tier required to run a command (or its current subcommand).
+     * Lookup order: subcommand map → command.requiredPlan → planRequirements → command.premium.
+     * @returns {'pro'|'enterprise'|null}
+     */
+    getRequiredPlanForCommand(interaction, command) {
+        const cmdName = command?.data?.name || interaction.commandName;
+        let group = null;
+        let sub = null;
+        try { group = interaction.options.getSubcommandGroup(false); } catch (_) { /* not a group command */ }
+        try { sub = interaction.options.getSubcommand(false); } catch (_) { /* no subcommand */ }
+
+        const subMap = this.subcommandPlanRequirements?.[cmdName];
+        if (subMap) {
+            if (group && sub && subMap[`${group}.${sub}`]) return subMap[`${group}.${sub}`];
+            if (group && subMap[`${group}.*`]) return subMap[`${group}.*`];
+            if (sub && subMap[sub]) return subMap[sub];
+            if (subMap['*']) return subMap['*'];
+        }
+
+        if (command?.requiredPlan) return String(command.requiredPlan).toLowerCase();
+        if (this.planRequirements?.[cmdName]) return this.planRequirements[cmdName];
+        if (command?.premium) return command.premium === true ? 'pro' : String(command.premium).toLowerCase();
+        return null;
+    }
+
+    /**
+     * Central feature-gate for slash commands. Returns { allowed, message }.
+     * Free commands always pass. Paid commands are blocked by the SERVER's plan,
+     * with exact upgrade messaging that names the server.
+     */
+    async checkCommandPlanAccess(interaction, command) {
+        const required = this.getRequiredPlanForCommand(interaction, command);
+        if (!required || required === 'free') return { allowed: true };
+
+        // Temporary business policy: keep all command tiers free until Pro launch.
+        const allFeaturesFree = String(process.env.DARKLOCK_ALL_FEATURES_FREE || 'true').toLowerCase() !== 'false';
+        if (allFeaturesFree) {
+            return { allowed: true, required, tier: 'free-temporary-open' };
+        }
+
+        let tier = 'free';
+        try {
+            const { resolveGuildTier } = require('./services/tier-enforcement');
+            tier = await resolveGuildTier(this, interaction.guild.id);
+        } catch (e) {
+            this.logger?.warn?.('Plan gate tier resolution failed:', e.message || e);
+        }
+
+        const rank = { free: 0, pro: 1, enterprise: 2 };
+        if ((rank[tier] || 0) >= (rank[required] || 0)) return { allowed: true };
+
+        // Enterprise purchased by the invoking user is valid across all servers they use.
+        const invokingUserId = interaction?.user?.id;
+        if (invokingUserId) {
+            const userHasEnterprise = await this.hasUserEnterpriseSubscription(invokingUserId);
+            if (userHasEnterprise) {
+                return { allowed: true, required, tier: 'enterprise', source: 'user_enterprise' };
+            }
+        }
+
+        const serverName = interaction.guild?.name || 'this server';
+        const upgradeUrl = 'https://admin.darklock.net/payment.html';
+        const message = required === 'enterprise'
+            ? `🔒 This command requires **DarkLock Enterprise**.\nUpgrade at ${upgradeUrl}`
+            : `🔒 This command requires **DarkLock Pro** for this server (**${serverName}**).\nUpgrade at ${upgradeUrl}`;
+
+        return { allowed: false, message, required, tier };
     }
 
     async applySubscriptionUpdate({ guildId, userId = null, plan = 'free', status = 'inactive', currentPeriodEnd = undefined, stripeCustomerId = null, stripeSubscriptionId = null }) {
@@ -3097,7 +3418,7 @@ class SecurityBot {
         }
 
         const allowedPlans = new Set(['free', 'pro', 'enterprise']);
-        const allowedStatuses = new Set(['active', 'inactive', 'past_due', 'canceled']);
+        const allowedStatuses = new Set(['active', 'trialing', 'inactive', 'past_due', 'canceled']);
 
         const normalizedPlan = allowedPlans.has(plan) ? plan : 'free';
         const normalizedStatus = allowedStatuses.has(status) ? status : 'inactive';

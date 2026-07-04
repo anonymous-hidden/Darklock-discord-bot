@@ -290,14 +290,12 @@
 
         <!-- Tabs -->
         <div class="setup-tabs">
-            <button class="setup-tab active" onclick="showTab('xp')"><i class="fas fa-star"></i>XP & Levels</button>
-            <button class="setup-tab" onclick="showTab('timeouts')"><i class="fas fa-clock"></i>Timeouts</button>
-            <button class="setup-tab" onclick="showTab('warnings')"><i class="fas fa-exclamation-triangle"></i>Warnings</button>
-            <button class="setup-tab" onclick="showTab('appeals')"><i class="fas fa-gavel"></i>Appeals</button>
-            <button class="setup-tab" onclick="showTab('filters')"><i class="fas fa-filter"></i>Filters</button>
-            <button class="setup-tab" onclick="showTab('logging')"><i class="fas fa-clipboard-list"></i>Logging</button>
-            <button class="setup-tab" onclick="showTab('settings')"><i class="fas fa-cog"></i>Settings</button>
-            <button class="setup-tab" onclick="showTab('exempt')"><i class="fas fa-user-shield"></i>Exemptions</button>
+            <button class="setup-tab active" onclick="showTab('xp', this)"><i class="fas fa-star"></i>XP & Levels</button>
+            <button class="setup-tab" onclick="showTab('timeouts', this)"><i class="fas fa-clock"></i>Timeouts</button>
+            <button class="setup-tab" onclick="showTab('warnings', this)"><i class="fas fa-exclamation-triangle"></i>Warnings</button>
+            <button class="setup-tab" onclick="showTab('appeals', this)"><i class="fas fa-gavel"></i>Appeals</button>
+            <button class="setup-tab" onclick="showTab('filters', this)"><i class="fas fa-filter"></i>Filters</button>
+            <button class="setup-tab" onclick="showTab('settings', this)"><i class="fas fa-user-shield"></i>Roles</button>
         </div>
 
         <!-- XP & Levels Tab -->
@@ -469,6 +467,30 @@
                         </div>
                         <label class="ds-toggle"><input type="checkbox" id="dmWarningNotification" checked><span class="ds-toggle-slider"></span></label>
                     </div>
+
+                    <div class="setup-form-row" style="margin-top: var(--ds-space-lg);">
+                        <div class="setup-form-group">
+                            <label class="setup-form-label">Max Warnings</label>
+                            <p class="setup-form-desc">Warnings before automatic action</p>
+                            <input type="number" class="setup-form-input" id="maxWarnings" value="3" min="1" max="10">
+                        </div>
+                        <div class="setup-form-group">
+                            <label class="setup-form-label">Warning Action</label>
+                            <p class="setup-form-desc">Action when max warnings reached</p>
+                            <select class="setup-form-select" id="warningAction">
+                                <option value="none">No Action</option>
+                                <option value="timeout">Timeout (1 hour)</option>
+                                <option value="kick">Kick from Server</option>
+                                <option value="ban">Ban from Server</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="setup-form-group">
+                        <label class="setup-form-label">Warning Expiry</label>
+                        <p class="setup-form-desc">Days until warnings expire (0 = never)</p>
+                        <input type="number" class="setup-form-input" id="warningExpiry" value="30" min="0" max="365">
+                    </div>
                 </div>
             </div>
         </div>
@@ -491,7 +513,9 @@
                     <div class="setup-form-group">
                         <label class="setup-form-label">Appeal Review Channel</label>
                         <p class="setup-form-desc">Channel where appeal requests are posted for staff review</p>
-                        <input type="text" class="setup-form-input" id="appealReviewChannel" placeholder="Select a channel...">
+                        <select class="setup-form-select" id="appealReviewChannel">
+                            <option value="">Select a channel...</option>
+                        </select>
                     </div>
 
                     <div class="setup-form-group">
@@ -557,6 +581,14 @@ If you believe this was a mistake, you can submit an appeal.</textarea>
 
         <!-- Filters Tab -->
         <div class="tab-content" id="tab-filters">
+            <div class="setup-alert info">
+                <i class="fas fa-info-circle setup-alert-icon"></i>
+                <div class="setup-alert-content">
+                    <h4>Anti-Spam Controls Are Separate</h4>
+                    <p>Flood and message-rate protection is managed in <a href="/setup/anti-spam" style="color: var(--ds-info);">Anti-Spam settings</a>. This tab handles moderation content filtering.</p>
+                </div>
+            </div>
+
             <div class="setup-card configuration-section" data-premium-feature="moderation-advanced">
                 <div class="setup-card-header">
                     <div class="setup-card-title"><i class="fas fa-filter"></i><h3>Content Filters</h3></div>
@@ -710,17 +742,58 @@ If you believe this was a mistake, you can submit an appeal.</textarea>
             </div>
         </div>
 
-        <!-- Logging Tab -->
-        <div class="tab-content" id="tab-logging">
+        <!-- Settings Tab -->
+        <div class="tab-content" id="tab-settings">
+            <!-- Staff Roles -->
             <div class="setup-card configuration-section" data-premium-feature="moderation-advanced">
                 <div class="setup-card-header">
-                    <div class="setup-card-title"><i class="fas fa-clipboard-list"></i><h3>Mod Log Settings</h3></div>
+                    <div class="setup-card-title"><i class="fas fa-user-shield"></i><h3>Staff Roles</h3></div>
+                </div>
+                <div class="setup-card-body">
+                    <div class="setup-form-row">
+                        <div class="setup-form-group">
+                            <label class="setup-form-label">Moderator Role</label>
+                            <p class="setup-form-desc">Role with moderator permissions</p>
+                            <select class="setup-form-select" id="modRole">
+                                <option value="">Select a role...</option>
+                            </select>
+                        </div>
+                        <div class="setup-form-group">
+                            <label class="setup-form-label">Admin Role</label>
+                            <p class="setup-form-desc">Role with administrator permissions</p>
+                            <select class="setup-form-select" id="adminRole">
+                                <option value="">Select a role...</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="setup-form-group">
+                        <label class="setup-form-label">Mute/Timeout Role</label>
+                        <p class="setup-form-desc">Role to apply for mute-style actions (optional)</p>
+                        <select class="setup-form-select" id="muteRole">
+                            <option value="">No mute role configured</option>
+                        </select>
+                    </div>
+
+                    <div class="setup-toggle-row">
+                        <div class="setup-toggle-info">
+                            <h4>Exempt Staff from Auto-Mod</h4>
+                            <p>Staff roles bypass auto-moderation filters</p>
+                        </div>
+                        <label class="ds-toggle"><input type="checkbox" id="exemptStaff" checked><span class="ds-toggle-slider"></span></label>
+                    </div>
+                </div>
+            </div>
+
+            <div class="setup-card configuration-section">
+                <div class="setup-card-header">
+                    <div class="setup-card-title"><i class="fas fa-bell"></i><h3>Moderator Alerts</h3></div>
                 </div>
                 <div class="setup-card-body">
                     <div class="setup-form-group">
-                        <label class="setup-form-label">Mod Log Channel</label>
-                        <p class="setup-form-desc">Channel to log all moderation actions</p>
-                        <select class="setup-form-select" id="logChannel">
+                        <label class="setup-form-label">Moderation Log Channel</label>
+                        <p class="setup-form-desc">Channel to log moderation actions</p>
+                        <select class="setup-form-select" id="modLogChannel">
                             <option value="">Select a channel...</option>
                         </select>
                     </div>
@@ -750,98 +823,33 @@ If you believe this was a mistake, you can submit an appeal.</textarea>
                     </div>
                 </div>
             </div>
-        </div>
 
-        <!-- Settings Tab -->
-        <div class="tab-content" id="tab-settings">
-            <!-- Warning System -->
-            <div class="setup-card configuration-section">
-                <div class="setup-card-header">
-                    <div class="setup-card-title"><i class="fas fa-exclamation-triangle"></i><h3>Warning System</h3></div>
-                </div>
-                <div class="setup-card-body">
-                    <div class="setup-form-row">
-                        <div class="setup-form-group">
-                            <label class="setup-form-label">Max Warnings</label>
-                            <p class="setup-form-desc">Warnings before automatic action</p>
-                            <input type="number" class="setup-form-input" id="maxWarnings" value="3" min="1" max="10">
-                        </div>
-                        <div class="setup-form-group">
-                            <label class="setup-form-label">Warning Action</label>
-                            <p class="setup-form-desc">Action when max warnings reached</p>
-                            <select class="setup-form-select" id="warningAction">
-                                <option value="none">No Action</option>
-                                <option value="timeout">Timeout (1 hour)</option>
-                                <option value="kick">Kick from Server</option>
-                                <option value="ban">Ban from Server</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <div class="setup-form-group">
-                        <label class="setup-form-label">Warning Expiry</label>
-                        <p class="setup-form-desc">Days until warnings expire (0 = never)</p>
-                        <input type="number" class="setup-form-input" id="warningExpiry" value="30" min="0" max="365">
-                    </div>
-                </div>
-            </div>
-
-            <!-- Staff Roles -->
             <div class="setup-card configuration-section" data-premium-feature="moderation-advanced">
                 <div class="setup-card-header">
-                    <div class="setup-card-title"><i class="fas fa-user-shield"></i><h3>Staff Roles</h3></div>
+                    <div class="setup-card-title"><i class="fas fa-user-clock"></i><h3>New Account Guard</h3></div>
                 </div>
                 <div class="setup-card-body">
-                    <div class="setup-form-row">
-                        <div class="setup-form-group">
-                            <label class="setup-form-label">Moderator Role</label>
-                            <p class="setup-form-desc">Role with moderator permissions</p>
-                            <select class="setup-form-select" id="modRole">
-                                <option value="">Select a role...</option>
-                            </select>
-                        </div>
-                        <div class="setup-form-group">
-                            <label class="setup-form-label">Admin Role</label>
-                            <p class="setup-form-desc">Role with administrator permissions</p>
-                            <select class="setup-form-select" id="adminRole">
-                                <option value="">Select a role...</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <div class="setup-toggle-row">
+                    <div class="setup-toggle-row" style="margin-bottom: var(--ds-space-lg);">
                         <div class="setup-toggle-info">
-                            <h4>Exempt Staff from Auto-Mod</h4>
-                            <p>Staff roles bypass auto-moderation filters</p>
+                            <h4>Enable Account Age Checks</h4>
+                            <p>Apply stricter moderation for very new accounts</p>
                         </div>
-                        <label class="ds-toggle"><input type="checkbox" id="exemptStaff" checked><span class="ds-toggle-slider"></span></label>
+                        <label class="ds-toggle"><input type="checkbox" id="accountAgeEnabled"><span class="ds-toggle-slider"></span></label>
+                    </div>
+
+                    <div class="setup-form-group">
+                        <label class="setup-form-label">Minimum Account Age (days)</label>
+                        <p class="setup-form-desc">Accounts newer than this are treated as higher risk</p>
+                        <input type="number" class="setup-form-input" id="minAccountAge" value="7" min="0" max="365">
                     </div>
                 </div>
             </div>
-        </div>
 
-        <!-- Exemptions Tab -->
-        <div class="tab-content" id="tab-exempt">
-            <div class="setup-card configuration-section" data-premium-feature="moderation-advanced">
-                <div class="setup-card-header">
-                    <div class="setup-card-title"><i class="fas fa-user-shield"></i><h3>Exemptions</h3></div>
-                </div>
-                <div class="setup-card-body">
-                    <div class="setup-form-group">
-                        <label class="setup-form-label">Exempt Roles</label>
-                        <p class="setup-form-desc">Roles that bypass auto-moderation</p>
-                        <div class="setup-multi-select" id="exemptRolesContainer">
-                            <div class="setup-multi-loading"><i class="fas fa-spinner fa-spin"></i> Loading roles...</div>
-                        </div>
-                    </div>
-
-                    <div class="setup-form-group">
-                        <label class="setup-form-label">Exempt Channels</label>
-                        <p class="setup-form-desc">Channels where auto-mod is disabled</p>
-                        <div class="setup-multi-select" id="exemptChannelsContainer">
-                            <div class="setup-multi-loading"><i class="fas fa-spinner fa-spin"></i> Loading channels...</div>
-                        </div>
-                    </div>
+            <div class="setup-alert info" style="margin-top: var(--ds-space-lg);">
+                <i class="fas fa-info-circle setup-alert-icon"></i>
+                <div class="setup-alert-content">
+                    <h4>More Advanced Security Controls</h4>
+                    <p>For raid/flood defenses use <a href="/setup/anti-raid" style="color: var(--ds-info);">Anti-Raid</a> and <a href="/setup/anti-spam" style="color: var(--ds-info);">Anti-Spam</a>.</p>
                 </div>
             </div>
         </div>
@@ -861,11 +869,11 @@ If you believe this was a mistake, you can submit an appeal.</textarea>
         if (!guildId) { alert('Please select a server first'); window.location.href = '/dashboard'; }
 
         // Tab switching
-        function showTab(tabId) {
+        function showTab(tabId, tabButton) {
             document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
             document.querySelectorAll('.setup-tab').forEach(t => t.classList.remove('active'));
             document.getElementById('tab-' + tabId).classList.add('active');
-            event.target.classList.add('active');
+            if (tabButton) tabButton.classList.add('active');
         }
 
         // Range sliders
@@ -914,18 +922,23 @@ If you believe this was a mistake, you can submit an appeal.</textarea>
                 channels = (chData.data?.channels || chData.channels || chData || []).filter(ch => ch.type === 0);
                 roles = (roleData.data?.roles || roleData.roles || roleData || []).filter(r => r.name !== '@everyone');
                 
-                // Log channel dropdown
-                const logSelect = document.getElementById('logChannel');
-                channels.forEach(ch => {
-                    const opt = document.createElement('option');
-                    opt.value = ch.id;
-                    opt.textContent = '#' + ch.name;
-                    logSelect.appendChild(opt);
+                // Channel dropdowns used on this page
+                const channelSelects = ['levelUpChannel', 'appealReviewChannel', 'modLogChannel'];
+                channelSelects.forEach(id => {
+                    const select = document.getElementById(id);
+                    if (!select) return;
+                    channels.forEach(ch => {
+                        const opt = document.createElement('option');
+                        opt.value = ch.id;
+                        opt.textContent = '#' + ch.name;
+                        select.appendChild(opt);
+                    });
                 });
 
                 // Staff role dropdowns
                 const modRoleSelect = document.getElementById('modRole');
                 const adminRoleSelect = document.getElementById('adminRole');
+                const muteRoleSelect = document.getElementById('muteRole');
                 roles.forEach(r => {
                     const opt1 = document.createElement('option');
                     opt1.value = r.id;
@@ -936,6 +949,13 @@ If you believe this was a mistake, you can submit an appeal.</textarea>
                     opt2.value = r.id;
                     opt2.textContent = '@' + r.name;
                     adminRoleSelect.appendChild(opt2);
+
+                    if (muteRoleSelect) {
+                        const opt3 = document.createElement('option');
+                        opt3.value = r.id;
+                        opt3.textContent = '@' + r.name;
+                        muteRoleSelect.appendChild(opt3);
+                    }
                 });
 
                 renderChannelMultiSelect();
@@ -1054,7 +1074,6 @@ If you believe this was a mistake, you can submit an appeal.</textarea>
                 document.getElementById('toxicityValue').textContent = (data.toxicity_threshold || 80) + '%';
                 document.getElementById('detectDuplicates').checked = data.detect_duplicates !== false;
                 document.getElementById('filterZalgo').checked = data.filter_zalgo !== false;
-                document.getElementById('filterZalgo').checked = data.filter_zalgo !== false;
                 
                 // Word filter settings
                 document.getElementById('wordFilterEnabled').checked = data.word_filter_enabled || false;
@@ -1072,11 +1091,6 @@ If you believe this was a mistake, you can submit an appeal.</textarea>
                 renderChannelMultiSelect();
                 renderRoleMultiSelect();
                 
-                document.getElementById('logChannel').value = data.mod_log_channel || '';
-                document.getElementById('dmOnWarn').checked = data.dm_on_warn !== false;
-                document.getElementById('dmOnKick').checked = data.dm_on_kick !== false;
-                document.getElementById('dmOnBan').checked = data.dm_on_ban !== false;
-                
                 // Warning system
                 document.getElementById('maxWarnings').value = data.max_warnings || 3;
                 document.getElementById('warningAction').value = data.warning_action || 'timeout';
@@ -1085,7 +1099,18 @@ If you believe this was a mistake, you can submit an appeal.</textarea>
                 // Staff roles
                 document.getElementById('modRole').value = data.mod_role_id || '';
                 document.getElementById('adminRole').value = data.admin_role_id || '';
+                document.getElementById('muteRole').value = data.mute_role_id || '';
                 document.getElementById('exemptStaff').checked = data.exempt_staff_automod !== false;
+
+                // Moderator alerts
+                document.getElementById('modLogChannel').value = data.mod_log_channel || '';
+                document.getElementById('dmOnWarn').checked = data.dm_on_warn !== false;
+                document.getElementById('dmOnKick').checked = data.dm_on_kick !== false;
+                document.getElementById('dmOnBan').checked = data.dm_on_ban !== false;
+
+                // New account guard
+                document.getElementById('accountAgeEnabled').checked = data.account_age_enabled || false;
+                document.getElementById('minAccountAge').value = data.min_account_age || 7;
                 
                 updateFeatureState(enabled);
             } catch (e) { console.error('Failed to load settings:', e); }
@@ -1156,11 +1181,6 @@ If you believe this was a mistake, you can submit an appeal.</textarea>
                     word_filter_whitelist_channels: document.getElementById('wordFilterWhitelistChannels').value,
                     word_filter_whitelist_roles: document.getElementById('wordFilterWhitelistRoles').value,
                     
-                    mod_log_channel: document.getElementById('logChannel').value,
-                    dm_on_warn: document.getElementById('dmOnWarn').checked,
-                    dm_on_kick: document.getElementById('dmOnKick').checked,
-                    dm_on_ban: document.getElementById('dmOnBan').checked,
-                    
                     // Warning system
                     max_warnings: parseInt(document.getElementById('maxWarnings').value),
                     warning_action: document.getElementById('warningAction').value,
@@ -1169,7 +1189,18 @@ If you believe this was a mistake, you can submit an appeal.</textarea>
                     // Staff roles
                     mod_role_id: document.getElementById('modRole').value,
                     admin_role_id: document.getElementById('adminRole').value,
-                    exempt_staff_automod: document.getElementById('exemptStaff').checked
+                    mute_role_id: document.getElementById('muteRole').value,
+                    exempt_staff_automod: document.getElementById('exemptStaff').checked,
+
+                    // Moderator alerts
+                    mod_log_channel: document.getElementById('modLogChannel').value,
+                    dm_on_warn: document.getElementById('dmOnWarn').checked,
+                    dm_on_kick: document.getElementById('dmOnKick').checked,
+                    dm_on_ban: document.getElementById('dmOnBan').checked,
+
+                    // New account guard
+                    account_age_enabled: document.getElementById('accountAgeEnabled').checked,
+                    min_account_age: parseInt(document.getElementById('minAccountAge').value)
                 };
 
                 const res = await SecureAuth.fetch(`/api/guild/${guildId}/settings`, {

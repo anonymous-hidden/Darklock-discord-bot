@@ -9,6 +9,8 @@ class ResponseHandler {
         this.logger = logger;
         this.bot = bot;
         this.webhookUrl = process.env[ALERT_WEBHOOK_ENV] || null;
+        this._warnedMissingWebhook = false;
+        this._lastMissingWebhookWarnAt = 0;
     }
 
     mapTierToSeverity(tier) {
@@ -19,7 +21,14 @@ class ResponseHandler {
 
     async sendWebhook(payload) {
         if (!this.webhookUrl) {
-            this.logger.warn('[TamperResponder] No webhook configured; skipping alert');
+            // Avoid flooding logs/events when many detections occur without a webhook.
+            const now = Date.now();
+            const shouldWarn = !this._warnedMissingWebhook || (now - this._lastMissingWebhookWarnAt) > 5 * 60 * 1000;
+            if (shouldWarn) {
+                this.logger.warn('[TamperResponder] No webhook configured; skipping alert');
+                this._warnedMissingWebhook = true;
+                this._lastMissingWebhookWarnAt = now;
+            }
             return;
         }
 

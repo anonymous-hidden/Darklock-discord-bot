@@ -958,9 +958,9 @@
 
   // Update User UI
   function updateUserUI(user) {
-    const nameEl = $('#user-name');
-    const avatarEl = $('#user-avatar');
-    const statusEl = $('#user-status');
+    const nameEl = $('#user-name') || $('#userName');
+    const avatarEl = $('#user-avatar') || $('#userAvatar');
+    const statusEl = $('#user-status') || $('#userStatus');
 
     if (nameEl) {
       // Use global_name (display name) if available, fallback to username
@@ -998,6 +998,41 @@
         ? `${user.username}#${user.discriminator}` 
         : `@${user.username}`;
       statusEl.textContent = handle;
+    }
+
+    // Small subscription emblem next to user name on dashboard card.
+    if (nameEl) {
+      const existing = nameEl.parentElement?.querySelector('.user-plan-emblem');
+      if (existing) existing.remove();
+
+      const sub = state.subscription || {};
+      const plan = String(sub.plan || 'free').toLowerCase();
+      const tier = sub.active && (plan === 'enterprise' || plan === 'pro') ? plan : null;
+
+      if (tier && nameEl.parentElement) {
+        const badge = document.createElement('span');
+        badge.className = `user-plan-emblem user-plan-${tier}`;
+        badge.textContent = tier === 'enterprise' ? 'Enterprise' : 'Pro';
+        badge.style.display = 'inline-flex';
+        badge.style.alignItems = 'center';
+        badge.style.marginLeft = '8px';
+        badge.style.padding = '2px 8px';
+        badge.style.borderRadius = '999px';
+        badge.style.fontSize = '11px';
+        badge.style.fontWeight = '700';
+        badge.style.letterSpacing = '0.02em';
+        badge.style.verticalAlign = 'middle';
+        if (tier === 'enterprise') {
+          badge.style.background = 'rgba(245, 158, 11, 0.18)';
+          badge.style.color = '#f59e0b';
+          badge.style.border = '1px solid rgba(245, 158, 11, 0.45)';
+        } else {
+          badge.style.background = 'rgba(59, 130, 246, 0.18)';
+          badge.style.color = '#60a5fa';
+          badge.style.border = '1px solid rgba(59, 130, 246, 0.45)';
+        }
+        nameEl.parentElement.appendChild(badge);
+      }
     }
   }
 
@@ -1113,6 +1148,7 @@
 
   function applySubscriptionUI() {
     const planBadge = getPlanBadge();
+    if (state.user) updateUserUI(state.user);
     const serverNameEl = $('#server-name');
     if (serverNameEl) {
       const baseName = serverNameEl.dataset.baseName || state.serverInfo?.name || serverNameEl.textContent || 'Server';
@@ -1158,9 +1194,9 @@
       }
     }
 
-    // Hide Upgrade tab if user is already Pro/Enterprise and active
+    // Temporary all-free policy: treat dashboard feature areas as unlocked.
     try {
-      const isPremium = Boolean(state.subscription?.active) && ['pro','enterprise'].includes((state.subscription?.plan || 'free').toLowerCase());
+      const isPremium = true;
       const upBtn = document.getElementById('nav-upgrade');
       const custBtn = document.getElementById('nav-customize');
       if (upBtn) {
@@ -1215,7 +1251,7 @@
           lockBanner = document.createElement('div');
           lockBanner.className = 'pro-lock-banner';
           lockBanner.style.cssText = 'margin:12px 0;padding:12px;border:1px solid #28406a;border-radius:10px;background:#0e1a32;color:#8fb9ff;display:flex;align-items:center;gap:10px;';
-          lockBanner.innerHTML = `${msg} <a href="/payment" class="btn-secondary" style="margin-left:auto">Upgrade</a>`;
+          lockBanner.innerHTML = `${msg} <a href="/site/pricing?notice=free" class="btn-secondary" style="margin-left:auto">Pro Soon</a>`;
           view.insertBefore(lockBanner, view.firstChild);
         }
       } else if (lockBanner) {
@@ -2626,13 +2662,6 @@
     if (viewName === 'console') {
       initConsoleView();
     }
-    if (viewName === 'analytics') {
-      const hasPremium = state.subscription?.active && (state.subscription?.plan === 'pro' || state.subscription?.plan === 'enterprise');
-      if (!hasPremium) {
-        showNotification('❌ This feature requires the **Pro plan**.', 'error');
-        return;
-      }
-    }
     state.currentView = viewName;
     $$('.nav-link').forEach(link => {
       const view = link.getAttribute('data-view');
@@ -3855,6 +3884,18 @@
   // Store servers globally for dropdown access
   let cachedServers = [];
 
+  function getServerPlanTier(server) {
+    const tier = String(server?.planTier || server?.plan || '').toLowerCase();
+    return ['pro', 'enterprise'].includes(tier) ? tier : 'free';
+  }
+
+  function renderServerPlanBadge(server) {
+    const tier = getServerPlanTier(server);
+    if (tier === 'free') return '';
+    const label = tier === 'enterprise' ? 'Enterprise' : 'Pro';
+    return `<span class="server-plan-badge server-plan-badge-${tier}">${label}</span>`;
+  }
+
   // Load Available Servers
   async function loadServers() {
     try {
@@ -3901,7 +3942,10 @@
         option.innerHTML = `
           <img src="${iconUrl}" alt="${escapeHtml(server.name)}" class="server-dropdown-icon" onerror="this.src='https://cdn.discordapp.com/embed/avatars/0.png'">
           <div class="server-dropdown-info">
-            <div class="server-dropdown-name">${escapeHtml(server.name)}</div>
+            <div class="server-dropdown-name-row">
+              <div class="server-dropdown-name">${escapeHtml(server.name)}</div>
+              ${renderServerPlanBadge(server)}
+            </div>
             <div class="server-dropdown-members">${(server.memberCount || 0).toLocaleString()} members</div>
           </div>
           ${isActive ? '<i class="fas fa-check server-dropdown-check"></i>' : ''}
@@ -3962,7 +4006,7 @@
       selectedIcon.style.display = 'block';
     }
     if (selectedName) {
-      selectedName.textContent = server.name;
+      selectedName.innerHTML = `${escapeHtml(server.name)}${renderServerPlanBadge(server)}`;
     }
     if (selectedMembers) {
       selectedMembers.textContent = `${(server.memberCount || 0).toLocaleString()} members`;

@@ -539,7 +539,12 @@ class Database {
             try { await this.run(`ALTER TABLE guild_configs ADD COLUMN verification_log_attempts INTEGER DEFAULT 0`); console.log('✅ Added verification_log_attempts'); } catch (e) {}
             
             // Advanced Settings - Anti-Raid
-            try { await this.run(`ALTER TABLE guild_configs ADD COLUMN raid_action TEXT DEFAULT 'kick'`); console.log('✅ Added raid_action'); } catch (e) {}
+            // Safe default: 'quarantine' (member-scoped, reversible). Never default
+            // to kick/ban/lockdown for new servers.
+            try { await this.run(`ALTER TABLE guild_configs ADD COLUMN raid_action TEXT DEFAULT 'quarantine'`); console.log('✅ Added raid_action'); } catch (e) {}
+            // One-time normalization: only fix missing/empty values, never overwrite
+            // a server's explicitly saved raid_action choice.
+            try { await this.run(`UPDATE guild_configs SET raid_action = 'quarantine' WHERE raid_action IS NULL OR TRIM(raid_action) = ''`); } catch (e) {}
             try { await this.run(`ALTER TABLE guild_configs ADD COLUMN raid_timeout_minutes INTEGER DEFAULT 10`); console.log('✅ Added raid_timeout_minutes'); } catch (e) {}
             try { await this.run(`ALTER TABLE guild_configs ADD COLUMN raid_dm_notify INTEGER DEFAULT 1`); console.log('✅ Added raid_dm_notify'); } catch (e) {}
             
@@ -723,6 +728,7 @@ class Database {
                 { name: 'ticket_autoclose_hours', def: "INTEGER DEFAULT 48" },
                 // Moderation
                 { name: 'mod_log_channel', def: "TEXT" },
+                { name: 'mute_role_id', def: "TEXT" },
                 { name: 'auto_mod_enabled', def: "BOOLEAN DEFAULT 0" },
                 { name: 'dm_on_warn', def: "BOOLEAN DEFAULT 1" },
                 { name: 'dm_on_kick', def: "BOOLEAN DEFAULT 1" },
@@ -730,6 +736,8 @@ class Database {
                 { name: 'max_warnings', def: "INTEGER DEFAULT 3" },
                 { name: 'warning_action', def: "TEXT DEFAULT 'timeout'" },
                 { name: 'warning_expiry_days', def: "INTEGER DEFAULT 30" },
+                { name: 'account_age_enabled', def: "BOOLEAN DEFAULT 0" },
+                { name: 'min_account_age', def: "INTEGER DEFAULT 7" },
                 { name: 'autorole_enabled', def: "BOOLEAN DEFAULT 0" },
                 { name: 'reactionroles_enabled', def: "BOOLEAN DEFAULT 0" },
                 { name: 'verification_role', def: "TEXT" },
@@ -792,6 +800,40 @@ class Database {
                 } catch (e) { /* column already exists */ }
             }
 
+            // Migration 26: Multi-Server Moderation Enterprise expansion.
+            // Additive columns for existing MSM tables (safe on populated DBs).
+            const msmNetworkCols = [
+                ['description', 'TEXT'],
+                ['status', "TEXT DEFAULT 'active'"],          // active | paused | disabled
+                ['default_action_mode', "TEXT DEFAULT 'review'"] // log | review | auto
+            ];
+            for (const [col, type] of msmNetworkCols) {
+                try { await this.run(`ALTER TABLE msm_networks ADD COLUMN ${col} ${type}`); } catch (e) { /* exists */ }
+            }
+            const msmMemberCols = [
+                ['enabled', 'INTEGER DEFAULT 1'],
+                ['sync_unbans', 'INTEGER DEFAULT 0'],
+                ['accept_watchlist', 'INTEGER DEFAULT 1'],
+                ['staff_only_review', 'INTEGER DEFAULT 0'],
+                ['min_severity', 'INTEGER DEFAULT 1'],
+                ['paused_in', 'INTEGER DEFAULT 0'],           // pause incoming synced actions
+                ['paused_out', 'INTEGER DEFAULT 0'],          // pause outgoing propagation
+                ['announce_mode', "TEXT DEFAULT 'review'"],   // off | review | auto
+                ['announce_min_urgency', "TEXT DEFAULT 'normal'"], // normal | urgent
+                ['announce_channel_id', 'TEXT']
+            ];
+            for (const [col, type] of msmMemberCols) {
+                try { await this.run(`ALTER TABLE msm_network_members ADD COLUMN ${col} ${type}`); } catch (e) { /* exists */ }
+            }
+            const msmActionCols = [
+                ['severity', 'INTEGER DEFAULT 1'],
+                ['evidence', 'TEXT'],
+                ['suggested_action', 'TEXT']
+            ];
+            for (const [col, type] of msmActionCols) {
+                try { await this.run(`ALTER TABLE msm_synced_actions ADD COLUMN ${col} ${type}`); } catch (e) { /* exists */ }
+            }
+
             console.log('✅ Database migrations complete');
         } catch (error) {
             console.error('⚠️ Migration error:', error);
@@ -825,9 +867,12 @@ class Database {
                 log_channel_id TEXT,
                 mod_role_id TEXT,
                 admin_role_id TEXT,
+                mute_role_id TEXT,
                 raid_threshold INTEGER DEFAULT 10,
                 spam_threshold INTEGER DEFAULT 5,
                 account_age_hours INTEGER DEFAULT 24,
+                account_age_enabled BOOLEAN DEFAULT 0,
+                min_account_age INTEGER DEFAULT 7,
                 verification_level INTEGER DEFAULT 1,
                 alert_channel TEXT,
                 antiraid_enabled BOOLEAN DEFAULT 1,
@@ -876,6 +921,19 @@ class Database {
                 current_period_end INTEGER,
                 stripe_customer_id TEXT,
                 stripe_subscription_id TEXT
+            )`,
+
+            // Manual (admin-granted) plan entitlements keyed by Discord identity.
+            // scope='user' -> target_id is a Discord user id (covers all their servers, Enterprise-style)
+            // scope='guild' -> target_id is a Discord guild id (per-server; also mirrored to guild_subscriptions)
+            `CREATE TABLE IF NOT EXISTS manual_plan_grants (
+                scope TEXT NOT NULL,
+                target_id TEXT NOT NULL,
+                plan TEXT NOT NULL DEFAULT 'free',
+                granted_by TEXT,
+                created_at INTEGER,
+                updated_at INTEGER,
+                PRIMARY KEY (scope, target_id)
             )`,
 
             // Security incidents
@@ -2152,6 +2210,179 @@ class Database {
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )`,
 
+            // ═══════════════════════════════════════════════════════════════
+            // MULTI-SERVER MODERATION (Enterprise) — linked moderation networks
+            // Security model: a guild belongs to at most ONE network. Every
+            // linked server must explicitly approve (double opt-in). Cross-server
+            // enforcement defaults to MANUAL review for safety.
+            // ═══════════════════════════════════════════════════════════════
+
+            // A moderation network. Hierarchy: one main (top) guild + members.
+            `CREATE TABLE IF NOT EXISTS msm_networks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                main_guild_id TEXT NOT NULL,
+                owner_user_id TEXT NOT NULL,
+                disabled INTEGER DEFAULT 0,
+                disabled_reason TEXT,
+                created_by TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(main_guild_id)
+            )`,
+
+            // Guilds that belong to a network, plus their per-server sync settings.
+            // UNIQUE(guild_id) enforces the "one network per guild" invariant.
+            `CREATE TABLE IF NOT EXISTS msm_network_members (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                network_id INTEGER NOT NULL,
+                guild_id TEXT NOT NULL,
+                role TEXT NOT NULL DEFAULT 'member',
+                status TEXT NOT NULL DEFAULT 'active',
+                sync_bans INTEGER DEFAULT 1,
+                sync_kicks INTEGER DEFAULT 0,
+                sync_timeouts INTEGER DEFAULT 0,
+                sync_warns INTEGER DEFAULT 0,
+                enforcement_mode TEXT NOT NULL DEFAULT 'manual',
+                added_by TEXT,
+                joined_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(guild_id)
+            )`,
+
+            // Pending link invitations. The double opt-in join flow lives here.
+            // token is embedded in the DM button customId and must match on click.
+            `CREATE TABLE IF NOT EXISTS msm_link_requests (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                network_id INTEGER NOT NULL,
+                source_guild_id TEXT NOT NULL,
+                target_guild_id TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                token TEXT NOT NULL,
+                requested_by TEXT,
+                responded_by TEXT,
+                dm_channel_id TEXT,
+                message_id TEXT,
+                expires_at DATETIME,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                responded_at DATETIME,
+                UNIQUE(token)
+            )`,
+
+            // Every cross-server action, whether applied, failed, skipped, or
+            // held for manual review (status = 'awaiting_review' == review queue).
+            `CREATE TABLE IF NOT EXISTS msm_synced_actions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                network_id INTEGER NOT NULL,
+                origin_guild_id TEXT NOT NULL,
+                target_guild_id TEXT NOT NULL,
+                action_type TEXT NOT NULL,
+                target_user_id TEXT NOT NULL,
+                target_user_tag TEXT,
+                moderator_id TEXT,
+                reason TEXT,
+                status TEXT NOT NULL DEFAULT 'pending',
+                failure_reason TEXT,
+                review_required INTEGER DEFAULT 0,
+                reviewed_by TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                processed_at DATETIME
+            )`,
+
+            // Users exempt from cross-server enforcement. guild_id = '*' means
+            // network-wide; otherwise the exemption applies to a single guild.
+            `CREATE TABLE IF NOT EXISTS msm_exempt_users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                network_id INTEGER NOT NULL,
+                guild_id TEXT NOT NULL DEFAULT '*',
+                user_id TEXT NOT NULL,
+                reason TEXT,
+                added_by TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(network_id, guild_id, user_id)
+            )`,
+
+            // Roles exempt from cross-server enforcement (guild-specific).
+            `CREATE TABLE IF NOT EXISTS msm_exempt_roles (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                network_id INTEGER NOT NULL,
+                guild_id TEXT NOT NULL,
+                role_id TEXT NOT NULL,
+                reason TEXT,
+                added_by TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(network_id, guild_id, role_id)
+            )`,
+
+            // Dedicated, append-only audit trail for all network-level events.
+            `CREATE TABLE IF NOT EXISTS msm_audit_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                network_id INTEGER,
+                guild_id TEXT,
+                event_type TEXT NOT NULL,
+                actor_id TEXT,
+                actor_tag TEXT,
+                target_guild_id TEXT,
+                target_user_id TEXT,
+                details TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )`,
+
+            // Network announcements published by the main server. Each joined
+            // server decides (via announce_mode) whether to auto-post, review,
+            // or ignore. Delivery per guild is tracked in msm_announcement_deliveries.
+            `CREATE TABLE IF NOT EXISTS msm_announcements (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                network_id INTEGER NOT NULL,
+                origin_guild_id TEXT NOT NULL,
+                type TEXT NOT NULL DEFAULT 'network_update',
+                urgency TEXT NOT NULL DEFAULT 'normal',
+                title TEXT NOT NULL,
+                body TEXT NOT NULL,
+                created_by TEXT,
+                created_by_tag TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )`,
+
+            // Per-guild delivery state for a network announcement. Status:
+            // 'pending_review' | 'posted' | 'denied' | 'failed' | 'skipped'.
+            `CREATE TABLE IF NOT EXISTS msm_announcement_deliveries (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                announcement_id INTEGER NOT NULL,
+                network_id INTEGER NOT NULL,
+                target_guild_id TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending_review',
+                channel_id TEXT,
+                message_id TEXT,
+                failure_reason TEXT,
+                reviewed_by TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                processed_at DATETIME,
+                UNIQUE(announcement_id, target_guild_id)
+            )`,
+
+            // Shared cross-server watchlist. A flagged user is surfaced (with
+            // context) to linked servers. It is NEVER treated as automatic guilt;
+            // action_mode controls how member servers may react.
+            `CREATE TABLE IF NOT EXISTS msm_watchlist (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                network_id INTEGER NOT NULL,
+                user_id TEXT NOT NULL,
+                source_guild_id TEXT NOT NULL,
+                reason TEXT,
+                severity INTEGER NOT NULL DEFAULT 1,
+                evidence TEXT,
+                action_mode TEXT NOT NULL DEFAULT 'alert',
+                status TEXT NOT NULL DEFAULT 'active',
+                added_by TEXT,
+                added_by_tag TEXT,
+                expires_at DATETIME,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                removed_by TEXT,
+                removed_at DATETIME,
+                UNIQUE(network_id, user_id, source_guild_id)
+            )`,
+
         ];
 
         for (const tableSQL of tables) {
@@ -2204,7 +2435,22 @@ class Database {
             'CREATE INDEX IF NOT EXISTS idx_hardening_issues_scan ON hardening_issues(scan_id)',
             'CREATE INDEX IF NOT EXISTS idx_captcha_challenges_guild_user ON captcha_challenges(guild_id, user_id)',
             'CREATE INDEX IF NOT EXISTS idx_guild_subscriptions_customer ON guild_subscriptions(stripe_customer_id)',
-            'CREATE INDEX IF NOT EXISTS idx_guild_subscriptions_subscription ON guild_subscriptions(stripe_subscription_id)'
+            'CREATE INDEX IF NOT EXISTS idx_guild_subscriptions_subscription ON guild_subscriptions(stripe_subscription_id)',
+            // Multi-server moderation indexes
+            'CREATE INDEX IF NOT EXISTS idx_msm_members_network ON msm_network_members(network_id)',
+            'CREATE INDEX IF NOT EXISTS idx_msm_members_guild ON msm_network_members(guild_id)',
+            'CREATE INDEX IF NOT EXISTS idx_msm_requests_target ON msm_link_requests(target_guild_id, status)',
+            'CREATE INDEX IF NOT EXISTS idx_msm_requests_token ON msm_link_requests(token)',
+            'CREATE INDEX IF NOT EXISTS idx_msm_actions_network ON msm_synced_actions(network_id, status)',
+            'CREATE INDEX IF NOT EXISTS idx_msm_actions_target ON msm_synced_actions(target_guild_id, status)',
+            'CREATE INDEX IF NOT EXISTS idx_msm_exempt_users ON msm_exempt_users(network_id, user_id)',
+            'CREATE INDEX IF NOT EXISTS idx_msm_exempt_roles ON msm_exempt_roles(network_id, guild_id)',
+            'CREATE INDEX IF NOT EXISTS idx_msm_audit_network ON msm_audit_log(network_id, created_at)',
+            'CREATE INDEX IF NOT EXISTS idx_msm_announcements_network ON msm_announcements(network_id, created_at)',
+            'CREATE INDEX IF NOT EXISTS idx_msm_ann_deliveries ON msm_announcement_deliveries(network_id, target_guild_id, status)',
+            'CREATE INDEX IF NOT EXISTS idx_msm_ann_deliveries_ann ON msm_announcement_deliveries(announcement_id)',
+            'CREATE INDEX IF NOT EXISTS idx_msm_watchlist_network ON msm_watchlist(network_id, status)',
+            'CREATE INDEX IF NOT EXISTS idx_msm_watchlist_user ON msm_watchlist(network_id, user_id, status)'
         ];
 
         for (const indexSQL of indexes) {
@@ -2343,11 +2589,13 @@ class Database {
 
         const config = await this.get('SELECT * FROM guild_configs WHERE guild_id = ?', [guildId]);
         if (!config) {
-            // Create default config
-            await this.run(`
-                INSERT INTO guild_configs (guild_id) 
-                VALUES (?)
-            `, [guildId]);
+            // Create default config. Explicitly set the safe raid_action default so
+            // new guilds never inherit a legacy aggressive column default ('kick').
+            try {
+                await this.run(`INSERT OR IGNORE INTO guild_configs (guild_id, raid_action) VALUES (?, 'quarantine')`, [guildId]);
+            } catch (e) {
+                await this.run(`INSERT OR IGNORE INTO guild_configs (guild_id) VALUES (?)`, [guildId]);
+            }
             return this.getGuildConfig(guildId);
         }
         
@@ -2368,11 +2616,11 @@ class Database {
         'auto_mod_enabled', 'ai_enabled',
         // Channel/role IDs
         'verification_channel_id', 'logs_channel_id', 'log_channel_id',
-        'unverified_role_id', 'verified_role_id', 'mod_role_id', 'admin_role_id',
+        'unverified_role_id', 'verified_role_id', 'mod_role_id', 'admin_role_id', 'mute_role_id',
         'alert_channel', 'mod_log_channel', 'welcome_channel', 'goodbye_channel',
         'verified_welcome_channel_id', 'verified_welcome_message',
         // Thresholds
-        'raid_threshold', 'spam_threshold', 'account_age_hours', 'verification_level',
+        'raid_threshold', 'spam_threshold', 'account_age_hours', 'account_age_enabled', 'min_account_age', 'verification_level',
         'antinuke_role_limit', 'antinuke_channel_limit', 'antinuke_ban_limit',
         // Welcome/Goodbye
         'welcome_enabled', 'welcome_message', 'goodbye_enabled', 'goodbye_message',
@@ -2654,7 +2902,7 @@ class Database {
 
     async setGuildSubscription(guildId, data = {}) {
         const allowedPlans = new Set(['free', 'pro', 'enterprise']);
-        const allowedStatuses = new Set(['active', 'inactive', 'past_due', 'canceled']);
+        const allowedStatuses = new Set(['active', 'trialing', 'inactive', 'past_due', 'canceled']);
 
         const existing = await this.getGuildSubscription(guildId).catch(() => null);
 
@@ -2722,6 +2970,85 @@ class Database {
             stripe_customer_id: stripeCustomerId,
             stripe_subscription_id: stripeSubscriptionId
         });
+    }
+
+    // ── Manual (admin-granted) plan entitlements ──────────────────────────────
+    // These let an admin comp a plan without Stripe. User-scope grants cover a
+    // Discord user across all their servers (Enterprise-style); guild-scope grants
+    // are mirrored into guild_subscriptions so bot command gating picks them up.
+
+    /**
+     * Create or update a manual plan grant.
+     * @param {'user'|'guild'} scope
+     * @param {string} targetId Discord user id or guild id
+     * @param {'free'|'pro'|'enterprise'} plan
+     * @param {string|null} grantedBy audit label
+     */
+    async setManualPlanGrant(scope, targetId, plan, grantedBy = null) {
+        const s = String(scope || '').toLowerCase();
+        if (!['user', 'guild'].includes(s)) throw new Error('Invalid grant scope');
+        const p = String(plan || '').toLowerCase();
+        if (!['free', 'pro', 'enterprise'].includes(p)) throw new Error('Invalid plan');
+        const id = String(targetId || '').trim();
+        if (!/^\d{5,25}$/.test(id)) throw new Error('Invalid Discord ID');
+        const now = Math.floor(Date.now() / 1000);
+
+        if (p === 'free') {
+            // "free" clears the grant entirely.
+            await this.run(`DELETE FROM manual_plan_grants WHERE scope = ? AND target_id = ?`, [s, id]);
+        } else {
+            await this.run(`
+                INSERT INTO manual_plan_grants (scope, target_id, plan, granted_by, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(scope, target_id) DO UPDATE SET
+                    plan = excluded.plan,
+                    granted_by = excluded.granted_by,
+                    updated_at = excluded.updated_at
+            `, [s, id, p, grantedBy, now, now]);
+        }
+
+        // Mirror guild-scope grants into guild_subscriptions so the bot's
+        // per-guild gating (getGuildPlan / hasEnterpriseFeatures) reflects it.
+        if (s === 'guild') {
+            if (p === 'free') {
+                await this.setPlanFree(id);
+            } else {
+                await this.setGuildSubscription(id, {
+                    plan: p,
+                    status: 'active',
+                    current_period_end: null
+                });
+            }
+        }
+
+        return { scope: s, target_id: id, plan: p };
+    }
+
+    /** Highest active manual grant plan for a Discord user id, or null. */
+    async getManualUserPlan(userId) {
+        const id = String(userId || '').trim();
+        if (!id) return null;
+        const row = await this.get(
+            `SELECT plan FROM manual_plan_grants WHERE scope = 'user' AND target_id = ?`,
+            [id]
+        ).catch(() => null);
+        return row?.plan || null;
+    }
+
+    /** Manual grant plan for a Discord guild id, or null. */
+    async getManualGuildPlan(guildId) {
+        const id = String(guildId || '').trim();
+        if (!id) return null;
+        const row = await this.get(
+            `SELECT plan FROM manual_plan_grants WHERE scope = 'guild' AND target_id = ?`,
+            [id]
+        ).catch(() => null);
+        return row?.plan || null;
+    }
+
+    /** Remove a manual grant (guild-scope also reverts guild_subscriptions to free). */
+    async removeManualPlanGrant(scope, targetId) {
+        return this.setManualPlanGrant(scope, targetId, 'free', null);
     }
 
     async logSecurityIncident(guildId, type, severity, data = {}) {

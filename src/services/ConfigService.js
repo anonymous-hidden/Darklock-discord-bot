@@ -20,6 +20,7 @@ class ConfigService extends EventEmitter {
             // Security settings
             anti_spam_enabled: { type: 'boolean', default: false },
             anti_raid_enabled: { type: 'boolean', default: false },
+            raid_action: { type: 'string', enum: ['alert_only', 'verify', 'quarantine', 'kick', 'ban', 'lockdown'], default: 'quarantine' },
             antinuke_enabled: { type: 'boolean', default: false },
             anti_phishing_enabled: { type: 'boolean', default: false },
             anti_links_enabled: { type: 'boolean', default: false },

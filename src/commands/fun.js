@@ -521,3 +521,54 @@ async function handleRate(interaction) {
 
     await interaction.reply({ embeds: [embed] });
 }
+
+
+const {SlashCommandBuilder } = require("discord.js");
+
+module.exports = {
+    data: new SlashCommandBuilder()
+    .setName("chaosrate")
+    .setDescription("Rates how chaotic someone is today")
+    .addUserOption(option => 
+        option
+        .setName("user")
+        .setDescription("The person to rate")
+        .setRequired(false)
+    ),
+
+    async execute(interaction) {
+        const target = interaction.option.getUser("user") || interaction.user;
+
+        const chaospercent = Math.floor(Math.random() * 101);
+
+        const diagnoses = [
+            "Likely to start a debate over nothing.",
+            "Definitely says 'one more gane' at 2 am.",
+            "Has gremlin energy today",
+            "Should not be trusted with admin perm.",
+            "Probably being dumb with perms.",
+            "A danger to the group chat.",
+            "surprisingly calm... suspicious.",
+            "Certified menace behavior."
+        ];
+
+        const titles = [
+            "tiny gremlin",
+            "chaos gremlin",
+            "Certified menace",
+            "Walking Red Flag",
+            "meme Overlord",
+            "Server Villain",
+            "Unstable Genius"
+        ];
+
+        const diagnosis = diagnoses[Math.floor(Math.random() * diagnoses.length)];
+        const title = titles[Math.floor(Math.random() * titles.length)];
+
+        await interaction.reply(
+            ' **Chaos Rate for ${target.username}**\n' +
+            'They are **${chaosPercent}% chaotic** today.\n\n' +
+            '**Diagnosis:** ${diagnosis}'
+        );
+    }
+};

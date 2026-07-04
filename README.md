@@ -666,6 +666,17 @@ Anti-tampering system with multiple layers:
 3. Production mode: **Process exits** on tamper detection
 4. NPM script: `npm run tamper:generate` (requires `AUDIT_ENCRYPTION_KEY`)
 
+### Pico 2 W USB RFID Hub (DarkLock)
+
+- Install firmware to Pico over USB:
+  - `npm run pico:install`
+- Test serial heartbeat:
+  - `npm run pico:test`
+- Request one-time baseline RFID approval before generating baseline:
+  - `npm run tamper:rfid:request`
+  - Scan an authorized RFID card
+  - `npm run tamper:generate`
+
 ---
 
 ## 7. Hardware Integration

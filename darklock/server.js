@@ -58,10 +58,13 @@ const rbacSchema = require('./utils/rbac-schema');
 const { initializeDefaultAdmins } = require('./default-admin');
 // Admin v4 - Enterprise RBAC Dashboard
 const adminV4Routes = require('./admin-v4/routes');
+const { setDiscordBot: setAdminV4DiscordBot } = require('./admin-v4/routes');
 const { initializeV4Schema } = require('./admin-v4/db/schema');
 // Room Control - hidden room control panel for trusted friends
 const roomControlStore = require('./utils/room-control-store');
 const { buildRouter: buildRoomControlRouter } = require('./routes/room-control');
+const { getHardwareSecurityHub } = require('./services/HardwareSecurityHubService');
+const hardwareApiRoutes = require('./routes/api/hardware');
 
 function registerDiscordAuthAliases(app) {
     const redirectWithQuery = (targetPath) => (req, res) => {
@@ -69,6 +72,12 @@ function registerDiscordAuthAliases(app) {
         const query = queryIndex >= 0 ? req.originalUrl.slice(queryIndex) : '';
         res.redirect(302, `${targetPath}${query}`);
     };
+
+    // Legacy auth path compatibility (old dashboard/frontend paths).
+    app.get(['/auth/login', '/auth/login/'], redirectWithQuery('/platform/auth/login'));
+    app.get(['/auth/signup', '/auth/signup/'], redirectWithQuery('/platform/auth/signup'));
+    app.get(['/auth/logout', '/auth/logout/'], redirectWithQuery('/platform/auth/logout'));
+    app.get(['/auth/me', '/auth/me/'], redirectWithQuery('/platform/auth/me'));
 
     app.get(['/auth/discord', '/auth/discord/'], redirectWithQuery('/platform/auth/discord'));
     app.get(['/auth/discord/callback', '/auth/discord/callback/'], redirectWithQuery('/platform/auth/discord/callback'));
@@ -117,6 +126,99 @@ function clearDashboardAuthCookies(req, res) {
     }
 }
 
+function joinCspDirectives(directives) {
+    return Object.entries(directives)
+        .map(([key, values]) => `${key} ${values.join(' ')}`)
+        .join('; ');
+}
+
+function getStrictAuthCsp() {
+    return joinCspDirectives({
+        'default-src': ["'self'"],
+        'script-src': ["'self'"],
+        'style-src': ["'self'"],
+        'img-src': ["'self'", 'data:'],
+        'font-src': ["'self'"],
+        'connect-src': ["'self'"],
+        'frame-ancestors': ["'none'"],
+        'base-uri': ["'self'"],
+        'form-action': ["'self'"],
+        'object-src': ["'none'"],
+    });
+}
+
+function getPlatformCompatibilityCsp(isSecure) {
+    const directives = {
+        'default-src': ["'self'"],
+        // Keep compatibility for legacy inline pages and notes WASM support.
+        'script-src': [
+            "'self'",
+            "'unsafe-inline'",
+            "'unsafe-hashes'",
+            "'wasm-unsafe-eval'",
+            'https://static.cloudflareinsights.com',
+            'https://cdn.jsdelivr.net'
+        ],
+        'script-src-attr': ["'unsafe-inline'", "'unsafe-hashes'"],
+        'style-src': ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com', 'https://cdnjs.cloudflare.com'],
+        'font-src': ["'self'", 'https://fonts.gstatic.com', 'https://cdnjs.cloudflare.com'],
+        'img-src': ["'self'", 'data:', 'https:'],
+        'connect-src': [
+            "'self'",
+            'https://ids.darklock.net',
+            'wss://rly.darklock.net',
+            'https://rly.darklock.net',
+            'https://static.cloudflareinsights.com',
+            'https://admin.darklock.net',
+            'https://cdn.jsdelivr.net'
+        ],
+        'frame-src': ["'none'"],
+        'frame-ancestors': ["'none'"],
+        'object-src': ["'none'"],
+        'base-uri': ["'self'"],
+        'form-action': ["'self'"],
+    };
+
+    if (isSecure) {
+        directives['upgrade-insecure-requests'] = [];
+    }
+
+    return joinCspDirectives(directives);
+}
+
+function isStrictAuthPath(reqPath) {
+    if (!reqPath) return false;
+
+    // Keep strict CSP on auth/API endpoints.
+    // The admin dashboard HTML intentionally contains inline style/script blocks,
+    // so it must use the compatibility CSP instead.
+    return reqPath === '/signin' ||
+        reqPath.startsWith('/signin/') ||
+        reqPath.startsWith('/api/admin/');
+}
+
+function applyRouteSplitCsp(app, isSecure) {
+    const strictCsp = getStrictAuthCsp();
+    const compatibilityCsp = getPlatformCompatibilityCsp(isSecure);
+
+    app.use((req, res, next) => {
+        // admin-auth route provides its own signin CSP header; keep that explicit override.
+        if (req.path === '/signin') {
+            return next();
+        }
+
+        if (isStrictAuthPath(req.path)) {
+            res.setHeader('Content-Security-Policy', strictCsp);
+            return next();
+        }
+
+        // Keep compatibility CSP for legacy inline pages outside strict admin/auth scope.
+        res.setHeader('Content-Security-Policy', compatibilityCsp);
+
+        next();
+    });
+}
+
 function verifyDashboardSessionToken(token) {
     if (!token) {
         return null;
@@ -129,6 +231,161 @@ function verifyDashboardSessionToken(token) {
     } catch {
         return null;
     }
+}
+
+function getDashboardTokenUserId(decoded) {
+    if (!decoded) return null;
+    const raw = decoded.userId || decoded.id;
+    if (raw === undefined || raw === null) return null;
+    const userId = String(raw).trim();
+    return userId || null;
+}
+
+async function resolveDashboardSession(req) {
+    const darklockToken = req.cookies?.darklock_token;
+    const dashboardToken = req.cookies?.dashboardToken;
+    const decoded = verifyDashboardSessionToken(darklockToken) || verifyDashboardSessionToken(dashboardToken);
+    if (!decoded) {
+        return null;
+    }
+
+    const userId = getDashboardTokenUserId(decoded);
+    if (!userId) {
+        return null;
+    }
+
+    const user = await db.getUserById(userId).catch(() => null);
+    if (!user) {
+        return null;
+    }
+
+    return { decoded, user };
+}
+
+function getDashboardUserSettings(user) {
+    if (!user) return {};
+
+    if (user.settings && typeof user.settings === 'object' && !Array.isArray(user.settings)) {
+        return user.settings;
+    }
+
+    if (typeof user.settings === 'string' && user.settings.trim()) {
+        try {
+            const parsed = JSON.parse(user.settings);
+            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+                return parsed;
+            }
+        } catch (_) {
+            return {};
+        }
+    }
+
+    return {};
+}
+
+function getAuthorizedDashboardGuilds(user) {
+    const settings = getDashboardUserSettings(user);
+    const guilds = Array.isArray(settings.discord_guilds) ? settings.discord_guilds : [];
+
+    return guilds
+        .map((guild) => ({
+            id: String(guild?.id || '').trim(),
+            name: guild?.name || 'Unknown Server',
+            icon: guild?.icon || null,
+            isOwner: guild?.isOwner === true || guild?.owner === true,
+            permissions: String(guild?.permissions || '0'),
+            memberCount: Number(guild?.memberCount || 0),
+            planTag: guild?.planTag || guild?.planTier || guild?.plan || null,
+        }))
+        .filter((guild) => guild.id.length > 0);
+}
+
+function getBotGuildIdsFromStatusFile() {
+    const statusPath = path.join(
+        process.env.DATA_PATH || path.join(__dirname, '..', 'data'),
+        'bot_status.json'
+    );
+
+    try {
+        if (!fs.existsSync(statusPath)) return new Set();
+        const status = JSON.parse(fs.readFileSync(statusPath, 'utf8'));
+        if (!Array.isArray(status.guild_ids)) return new Set();
+        return new Set(status.guild_ids.map((id) => String(id)));
+    } catch (_) {
+        return new Set();
+    }
+}
+
+function getBotGuildDetailsFromStatusFile() {
+    const statusPath = path.join(
+        process.env.DATA_PATH || path.join(__dirname, '..', 'data'),
+        'bot_status.json'
+    );
+    try {
+        if (!fs.existsSync(statusPath)) return {};
+        const status = JSON.parse(fs.readFileSync(statusPath, 'utf8'));
+        return (status && typeof status.guild_details === 'object' && status.guild_details) ? status.guild_details : {};
+    } catch (_) {
+        return {};
+    }
+}
+
+function getBotDbPath() {
+    return path.join(
+        process.env.DATA_PATH || path.join(__dirname, '..', 'data'),
+        'security_bot.db'
+    );
+}
+
+function hasGuildManagementPermission(guild) {
+    if (!guild) return false;
+    if (guild.isOwner) return true;
+
+    try {
+        const perms = BigInt(guild.permissions || 0);
+        const ADMINISTRATOR = 0x8n;
+        const MANAGE_GUILD = 0x20n;
+        return (perms & ADMINISTRATOR) !== 0n || (perms & MANAGE_GUILD) !== 0n;
+    } catch (_) {
+        return false;
+    }
+}
+
+function pickAuthorizedGuild(guilds, requestedId) {
+    if (!Array.isArray(guilds) || guilds.length === 0) return null;
+
+    const requested = String(requestedId || '').trim();
+    if (requested) {
+        const match = guilds.find((guild) => guild.id === requested);
+        if (match) return match;
+    }
+
+    return guilds[0];
+}
+
+function parseStatusTimestampMs(value) {
+    if (value === undefined || value === null) return null;
+
+    if (typeof value === 'number' && Number.isFinite(value)) {
+        return value > 1e12 ? value : value * 1000;
+    }
+
+    if (typeof value === 'string') {
+        const trimmed = value.trim();
+        if (!trimmed) return null;
+
+        const parsed = Date.parse(trimmed);
+        if (!Number.isNaN(parsed)) return parsed;
+
+        if (/^\d+$/.test(trimmed)) {
+            const numeric = Number(trimmed);
+            if (Number.isFinite(numeric)) {
+                return numeric > 1e12 ? numeric : numeric * 1000;
+            }
+        }
+    }
+
+    return null;
 }
 
 const SECURE_CHANNEL_VERSION_MANIFEST_PATH = path.join(__dirname, 'data', 'secure-channel-version.json');
@@ -440,10 +697,12 @@ class DarklockPlatform {
         this.port = options.port || process.env.DARKLOCK_PORT || 3002;
         this.existingApp = options.existingApp || null;
         this.discordBot = options.bot || null;
+        this.hardwareHub = getHardwareSecurityHub();
         
         // If bot is provided, set it for platform routes
         if (this.discordBot) {
             setPlatformDiscordBot?.(this.discordBot);
+            setAdminV4DiscordBot?.(this.discordBot);
         }
         
         this.setupMiddleware();
@@ -457,6 +716,7 @@ class DarklockPlatform {
     setBot(bot) {
         this.discordBot = bot;
         setPlatformDiscordBot?.(bot);
+        setAdminV4DiscordBot?.(bot);
         debugLogger.log('[Darklock Platform] Discord bot reference set');
     }
     
@@ -477,22 +737,8 @@ class DarklockPlatform {
         // Comprehensive security headers
         this.app.use(helmet({
             // Content Security Policy
-            contentSecurityPolicy: {
-                directives: {
-                    defaultSrc: ["'self'"],
-                    scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-hashes'", "'wasm-unsafe-eval'", "https://static.cloudflareinsights.com", "https://cdn.jsdelivr.net"], // 'wasm-unsafe-eval' required for WebAssembly (libsodium) used by Darklock Notes
-                    scriptSrcAttr: ["'unsafe-inline'", "'unsafe-hashes'"], // Allow inline event handlers (onclick, etc.)
-                    styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com", "https://cdnjs.cloudflare.com"],
-                    fontSrc: ["'self'", "https://fonts.gstatic.com", "https://cdnjs.cloudflare.com"],
-                    imgSrc: ["'self'", "data:", "https:"],
-                    connectSrc: ["'self'", "https://ids.darklock.net", "wss://rly.darklock.net", "https://rly.darklock.net", "https://static.cloudflareinsights.com", "https://admin.darklock.net", "https://cdn.jsdelivr.net"],
-                    frameSrc: ["'none'"],
-                    objectSrc: ["'none'"],
-                    baseUri: ["'self'"],
-                    formAction: ["'self'"],
-                    upgradeInsecureRequests: isSecure ? [] : null
-                }
-            },
+            // Route-split CSP is applied in dedicated middleware below.
+            contentSecurityPolicy: false,
             // HTTP Strict Transport Security (HTTPS only)
             hsts: isSecure ? {
                 maxAge: 31536000,
@@ -519,6 +765,8 @@ class DarklockPlatform {
             crossOriginResourcePolicy: false,
             originAgentCluster: false
         }));
+
+        applyRouteSplitCsp(this.app, isSecure);
         
         // Additional security headers not covered by helmet
         this.app.use((req, res, next) => {
@@ -988,11 +1236,9 @@ class DarklockPlatform {
                 return res.redirect('https://admin.darklock.net/dashboard');
             }
 
+            const hasValidSession = !!(await resolveDashboardSession(req));
             const darklockToken = req.cookies?.darklock_token;
             const dashboardToken = req.cookies?.dashboardToken;
-            const validDarklockSession = verifyDashboardSessionToken(darklockToken);
-            const validDashboardSession = verifyDashboardSessionToken(dashboardToken);
-            const hasValidSession = !!(validDarklockSession || validDashboardSession);
 
             // On platform domain, keep unauthenticated users on the platform auth flow.
             if (hostname === 'platform.darklock.net' && !hasValidSession) {
@@ -1073,10 +1319,7 @@ class DarklockPlatform {
             const { resolveView } = require('./utils/theme-resolver');
             let htmlPath = resolveView('home.html');
             if (!fs.existsSync(htmlPath)) {
-                const fallbackPath = resolveView('ridgeline.html');
-                htmlPath = fs.existsSync(fallbackPath)
-                    ? fallbackPath
-                    : path.join(__dirname, 'views', 'status.html');
+                htmlPath = path.join(__dirname, 'views', 'status.html');
             }
             let html = fs.readFileSync(htmlPath, 'utf8');
             
@@ -2191,6 +2434,11 @@ class DarklockPlatform {
             res.sendFile(path.join(__dirname, 'views/docs.html'));
         });
         
+        // Ridgeline product page (coming soon)
+        this.app.get('/platform/ridgeline', (req, res) => {
+            res.sendFile(path.join(__dirname, 'views/ridgeline.html'));
+        });
+        
         // System Status page
         this.app.get('/platform/status', (req, res) => {
             res.sendFile(path.join(__dirname, 'views/status.html'));
@@ -2547,6 +2795,9 @@ class DarklockPlatform {
         
         // Team Management API routes (under /api/admin for consistency with other admin APIs)
         this.app.use('/api/admin/team', teamManagementRoutes);
+
+        // Hardware RFID admin API (USB Pico bridge status/challenges/cards)
+        this.app.use('/api/admin/hardware', requireAdminAuth, hardwareApiRoutes);
         
         // Admin v4 API routes (Enterprise RBAC dashboard)
         // Never cache — prevents 304 loops where browser/Cloudflare serves stale redirects
@@ -2689,6 +2940,12 @@ class DarklockPlatform {
         
         // Site routes (public pages)
         const siteViewsDir = path.join(__dirname, '../src/dashboard/views/site');
+        this.app.get('/site', (req, res, next) => {
+            if (req.path === '/site' || req.originalUrl === '/site') {
+                return res.redirect(301, '/site/');
+            }
+            return next();
+        });
         this.app.get('/site/', (req, res) => {
             res.sendFile(path.join(siteViewsDir, 'index.html'));
         });
@@ -2734,6 +2991,14 @@ class DarklockPlatform {
         this.app.get('/site/pricing', (req, res) => {
             res.sendFile(path.join(siteViewsDir, 'pricing.html'));
         });
+        // Pro checkout is not active for public site flow yet.
+        // Keep /site/payment stable by sending users back to pricing with a notice.
+        this.app.get('/site/payment', (req, res) => {
+            res.redirect('/site/pricing?notice=free');
+        });
+        this.app.get('/site/payment.html', (req, res) => {
+            res.redirect('/site/pricing?notice=free');
+        });
         this.app.get('/site/updates', (req, res) => {
             res.sendFile(path.join(siteViewsDir, 'updates.html'));
         });
@@ -2741,23 +3006,56 @@ class DarklockPlatform {
             res.sendFile(path.join(siteViewsDir, 'add-bot.html'));
         });
         
-        // Redirect root to platform
-        this.app.get('/', (req, res) => {
-            res.redirect('/platform');
+        // Root homepage — brand landing page (with user state)
+        this.app.get('/', async (req, res) => {
+            const token = req.cookies?.darklock_token;
+            let userData = null;
+
+            if (token) {
+                try {
+                    const jwt = require('jsonwebtoken');
+                    const { requireEnv } = require('./utils/env-validator');
+                    const secret = requireEnv('JWT_SECRET');
+                    const decoded = jwt.verify(token, secret);
+                    const db = require('./utils/database');
+                    const user = await db.getUserById(decoded.userId);
+                    if (user) {
+                        userData = {
+                            id: user.id,
+                            username: user.username,
+                            email: user.email,
+                            role: user.role,
+                            displayName: user.display_name
+                        };
+                    }
+                } catch (err) {
+                    res.clearCookie('darklock_token');
+                }
+            }
+
+            const fs = require('fs');
+            const { resolveView } = require('./utils/theme-resolver');
+            let htmlPath = resolveView('landing.html');
+            if (!fs.existsSync(htmlPath)) {
+                // Fallback to the platform page if the landing view is missing
+                return res.redirect('/platform');
+            }
+            let html = fs.readFileSync(htmlPath, 'utf8');
+            const userScript = `<script>window.DARKLOCK_USER = ${JSON.stringify(userData)};</script>`;
+            html = html.replace('</head>', `${userScript}</head>`);
+            res.send(html);
         });
         
         // Platform dashboard auth helper
         const dashAuth = async (req, res, next) => {
-            const darklockToken = req.cookies?.darklock_token;
-            const dashboardToken = req.cookies?.dashboardToken;
-            const decoded = verifyDashboardSessionToken(darklockToken) || verifyDashboardSessionToken(dashboardToken);
-
-            if (!decoded) {
+            const session = await resolveDashboardSession(req);
+            if (!session) {
                 clearDashboardAuthCookies(req, res);
                 return res.status(401).json({ success: false, error: 'Session expired' });
             }
 
-            req.platformUser = decoded;
+            req.platformUser = session.decoded;
+            req.platformUserRecord = session.user;
             next();
         };
 
@@ -2854,9 +3152,11 @@ class DarklockPlatform {
         // Dashboard API - Get current user
         this.app.get('/platform/dashboard/api/me', dashAuth, async (req, res) => {
             try {
-                const db = require('./utils/database');
-                const user = await db.getUserById(req.platformUser.userId);
-                if (!user) return res.status(404).json({ success: false, error: 'User not found' });
+                const user = req.platformUserRecord;
+                if (!user) {
+                    clearDashboardAuthCookies(req, res);
+                    return res.status(401).json({ success: false, error: 'Session expired' });
+                }
                 const settings = user.settings || {};
                 res.json({
                     success: true,
@@ -2886,30 +3186,12 @@ class DarklockPlatform {
         // Bot dashboard compatibility API: /api/me
         this.app.get('/api/me', dashAuth, async (req, res) => {
             try {
-                const db = require('./utils/database');
-                const user = await db.getUserById(req.platformUser.userId);
+                const user = req.platformUserRecord;
                 if (!user) {
-                    const tokenUserId = String(req.platformUser.userId || req.platformUser.id || '0');
-                    const tokenAvatar = req.platformUser.avatar || null;
-                    let avatarUrl = null;
-                    if (tokenAvatar && /^\d+$/.test(tokenUserId)) {
-                        const ext = String(tokenAvatar).startsWith('a_') ? 'gif' : 'png';
-                        avatarUrl = `https://cdn.discordapp.com/avatars/${tokenUserId}/${tokenAvatar}.${ext}?size=128`;
-                    }
-
-                    return res.json({
-                        success: true,
-                        user: {
-                            id: tokenUserId,
-                            userId: tokenUserId,
-                            username: req.platformUser.username || 'User',
-                            globalName: req.platformUser.globalName || req.platformUser.username || 'User',
-                            role: req.platformUser.role || 'user',
-                            avatarUrl,
-                            avatar: null,
-                        }
-                    });
+                    clearDashboardAuthCookies(req, res);
+                    return res.status(401).json({ success: false, error: 'Session expired' });
                 }
+
                 // Build a ready-to-use avatar URL (stored as full URL or local path)
                 let avatarUrl = null;
                 if (user.avatar && (user.avatar.startsWith('http') || user.avatar.startsWith('/'))) {
@@ -2936,13 +3218,19 @@ class DarklockPlatform {
         // Bot status pill endpoint (polled by dashboard-live.js header pill)
         this.app.get('/platform/api/bot/status', (req, res) => {
             try {
-                const fs = require('fs');
                 const statusPath = path.join(process.env.DATA_PATH || path.join(__dirname, '..', 'data'), 'bot_status.json');
+                const staleMs = Number(process.env.BOT_STATUS_STALE_MS || 120000);
                 let bot = { online: false };
                 if (fs.existsSync(statusPath)) {
                     const status = JSON.parse(fs.readFileSync(statusPath, 'utf8'));
-                    const ts = status.timestamp ? new Date(status.timestamp).getTime() : 0;
-                    const fresh = ts > 0 && (Date.now() - ts) < 30000; // status written every 5s
+                    const ts = parseStatusTimestampMs(
+                        status.timestamp
+                        || status.last_heartbeat
+                        || status.updated_at
+                        || status.timestampMs
+                        || status.ts
+                    );
+                    const fresh = typeof ts === 'number' && (Date.now() - ts) < staleMs;
                     if (status.online && fresh) {
                         bot = {
                             online: true,
@@ -2963,113 +3251,18 @@ class DarklockPlatform {
         // Bot dashboard compatibility API: /api/servers/list
         this.app.get('/api/servers/list', dashAuth, async (req, res) => {
             try {
-                const db = require('./utils/database');
-                const fs = require('fs');
-                const path = require('path');
-                const user = await db.getUserById(req.platformUser.userId);
-                const tokenDiscordCandidate = String(
-                    req.platformUser?.oauthId
-                    || req.platformUser?.oauth_id
-                    || req.platformUser?.discordId
-                    || req.platformUser?.discord_id
-                    || req.platformUser?.userId
-                    || ''
-                );
-                const tokenDiscordUserId = /^\d+$/.test(tokenDiscordCandidate) ? tokenDiscordCandidate : null;
-                const resolvedDiscordUserId = (
-                    user?.oauth_provider === 'discord' && user?.oauth_id
-                )
-                    ? String(user.oauth_id)
-                    : tokenDiscordUserId;
-
-                // Load bot guild IDs from status file (written every 5s by the bot)
-                let botGuildIds = new Set();
-                try {
-                    const statusPath = path.join(process.cwd(), 'data', 'bot_status.json');
-                    const statusRaw = fs.readFileSync(statusPath, 'utf8');
-                    const status = JSON.parse(statusRaw);
-                    if (Array.isArray(status.guild_ids)) {
-                        status.guild_ids.forEach(id => botGuildIds.add(String(id)));
-                    }
-                } catch (_) { /* bot status not available */ }
-
-                // Get user's cached guild list
-                const settings = (typeof user?.settings === 'object' && user.settings) ? user.settings
-                    : (() => { try { return JSON.parse(user?.settings || '{}'); } catch(_) { return {}; } })();
-                let allGuilds = Array.isArray(settings.discord_guilds) ? settings.discord_guilds : [];
-
-                // Fallback: legacy dashboard JWTs can carry guilds directly.
-                if (allGuilds.length === 0 && Array.isArray(req.platformUser.guilds)) {
-                    allGuilds = req.platformUser.guilds.map(g => ({
-                        id: String(g.id),
-                        name: g.name || 'Unknown Server',
-                        icon: g.icon ? (String(g.icon).startsWith('http') ? g.icon : `https://cdn.discordapp.com/icons/${g.id}/${g.icon}.png?size=64`) : null,
-                        isOwner: g.isOwner === true || g.owner === true,
-                        permissions: String(g.permissions || '0'),
-                        memberCount: Number(g.memberCount || 0)
-                    }));
+                const user = req.platformUserRecord;
+                if (!user) {
+                    clearDashboardAuthCookies(req, res);
+                    return res.status(401).json({ success: false, error: 'Session expired' });
                 }
 
-                // Last-resort fallback: derive manageable guilds from live bot membership.
-                if (
-                    allGuilds.length === 0
-                    && resolvedDiscordUserId
-                    && this.discordBot?.client?.guilds?.cache
-                ) {
-                    const discoveredGuilds = [];
+                const allGuilds = getAuthorizedDashboardGuilds(user);
+                const botGuildIds = getBotGuildIdsFromStatusFile();
 
-                    for (const guild of this.discordBot.client.guilds.cache.values()) {
-                        const isOwner = String(guild.ownerId) === resolvedDiscordUserId;
-                        let hasAdministrator = false;
-                        let hasManageGuild = false;
-
-                        if (!isOwner) {
-                            const member = await guild.members.fetch(resolvedDiscordUserId).catch(() => null);
-                            hasAdministrator = !!member?.permissions?.has?.('Administrator');
-                            hasManageGuild = !!member?.permissions?.has?.('ManageGuild');
-                        }
-
-                        const hasManageAccess = isOwner || hasAdministrator || hasManageGuild;
-
-                        if (!hasManageAccess) continue;
-
-                        discoveredGuilds.push({
-                            id: String(guild.id),
-                            name: guild.name || 'Unknown Server',
-                            icon: guild.iconURL ? guild.iconURL({ size: 64 }) : null,
-                            isOwner,
-                            permissions: isOwner || hasAdministrator ? '8' : '32',
-                            memberCount: Number(guild.memberCount || 0)
-                        });
-                    }
-
-                    if (discoveredGuilds.length > 0) {
-                        allGuilds = discoveredGuilds;
-                    }
-                }
-
-                // Filter: bot must be in the guild AND user must have Administrator or Manage Server permission
-                const ADMINISTRATOR = 0x8n;
-                const MANAGE_GUILD = 0x20n;
-                let servers = allGuilds.filter(g => {
-                    if (botGuildIds.size > 0 && !botGuildIds.has(String(g.id))) return false;
-                    // isOwner always passes; otherwise check permissions bitmask
-                    if (g.isOwner) return true;
-                    try {
-                        const perms = BigInt(g.permissions || 0);
-                        return (perms & ADMINISTRATOR) !== 0n || (perms & MANAGE_GUILD) !== 0n;
-                    } catch (_) { return false; }
-                });
-
-                // If bot status is unavailable (no guild_ids), fall back to admin-permission filter only
-                if (botGuildIds.size === 0) {
-                    servers = allGuilds.filter(g => {
-                        if (g.isOwner) return true;
-                        try {
-                            const perms = BigInt(g.permissions || 0);
-                            return (perms & ADMINISTRATOR) !== 0n || (perms & MANAGE_GUILD) !== 0n;
-                        } catch (_) { return false; }
-                    });
+                let servers = allGuilds.filter((guild) => hasGuildManagementPermission(guild));
+                if (botGuildIds.size > 0) {
+                    servers = servers.filter((guild) => botGuildIds.has(String(guild.id)));
                 }
 
                 return res.json({ success: true, servers });
@@ -3082,20 +3275,28 @@ class DarklockPlatform {
         // Bot dashboard compatibility API: /api/server-info
         this.app.get('/api/server-info', dashAuth, async (req, res) => {
             try {
+                const user = req.platformUserRecord;
+                if (!user) {
+                    clearDashboardAuthCookies(req, res);
+                    return res.status(401).json({ success: false, error: 'Session expired' });
+                }
+
                 const requestedId = String(req.query.guildId || '');
-                const guildCache = this.discordBot?.client?.guilds?.cache;
-                const guild = guildCache
-                    ? (requestedId ? guildCache.get(requestedId) : guildCache.first())
-                    : null;
-                if (!guild) {
+                const authorizedGuilds = getAuthorizedDashboardGuilds(user).filter((guild) => hasGuildManagementPermission(guild));
+                const selectedGuild = pickAuthorizedGuild(authorizedGuilds, requestedId);
+
+                if (!selectedGuild) {
                     return res.json({ success: true, name: 'No Server', memberCount: 0, icon: null });
                 }
+
+                const guildDetails = getBotGuildDetailsFromStatusFile();
+                const liveDetail = guildDetails[String(selectedGuild.id)] || {};
                 return res.json({
                     success: true,
-                    id: String(guild.id),
-                    name: guild.name || 'Unknown Server',
-                    memberCount: Number(guild.memberCount || 0),
-                    icon: guild.iconURL ? guild.iconURL({ size: 64 }) : null,
+                    id: String(selectedGuild.id),
+                    name: liveDetail.name || selectedGuild.name || 'Unknown Server',
+                    memberCount: Number(liveDetail.memberCount ?? selectedGuild.memberCount ?? 0),
+                    icon: liveDetail.icon || selectedGuild.icon || null,
                 });
             } catch (err) {
                 console.error('[Dashboard API] /api/server-info error:', err);
@@ -3106,21 +3307,66 @@ class DarklockPlatform {
         // Bot dashboard compatibility API: /api/analytics/overview
         this.app.get('/api/analytics/overview', dashAuth, async (req, res) => {
             try {
+                const user = req.platformUserRecord;
+                if (!user) {
+                    clearDashboardAuthCookies(req, res);
+                    return res.status(401).json({ success: false, error: 'Session expired' });
+                }
+
                 const requestedId = String(req.query.guildId || '');
-                const guildCache = this.discordBot?.client?.guilds?.cache;
-                const guild = guildCache
-                    ? (requestedId ? guildCache.get(requestedId) : guildCache.first())
-                    : null;
+                const authorizedGuilds = getAuthorizedDashboardGuilds(user).filter((guild) => hasGuildManagementPermission(guild));
+                const selectedGuild = pickAuthorizedGuild(authorizedGuilds, requestedId);
+
+                const guildDetails = getBotGuildDetailsFromStatusFile();
+                const liveDetail = selectedGuild ? (guildDetails[String(selectedGuild.id)] || {}) : {};
+                const memberCount = Number(liveDetail.memberCount ?? selectedGuild?.memberCount ?? 0);
+
+                let totalMessages = 0, totalCommands = 0, totalModActions = 0;
+                let joinsToday = 0, messagesToday = 0, commandsToday = 0, modActionsToday = 0;
+
+                if (selectedGuild) {
+                    const guildId = String(selectedGuild.id);
+                    const botDbPath = getBotDbPath();
+                    if (fs.existsSync(botDbPath)) {
+                        const sqlite3 = require('sqlite3');
+                        const botDb = new sqlite3.Database(botDbPath, sqlite3.OPEN_READONLY);
+                        const dbGet = (sql, params) => new Promise((resolve) => {
+                            botDb.get(sql, params, (err, row) => resolve(err ? null : row));
+                        });
+                        try {
+                            const today = new Date().toISOString().slice(0, 10);
+                            const [msgAll, msgToday, cmdAll, cmdToday, modAll, modToday, joinsRow] = await Promise.all([
+                                dbGet('SELECT SUM(message_count) AS total FROM message_analytics WHERE guild_id=?', [guildId]),
+                                dbGet('SELECT SUM(message_count) AS total FROM message_analytics WHERE guild_id=? AND date=?', [guildId, today]),
+                                dbGet('SELECT COUNT(*) AS total FROM command_analytics WHERE guild_id=?', [guildId]),
+                                dbGet('SELECT COUNT(*) AS total FROM command_analytics WHERE guild_id=? AND date=?', [guildId, today]),
+                                dbGet('SELECT COUNT(*) AS total FROM mod_actions WHERE guild_id=?', [guildId]),
+                                dbGet('SELECT COUNT(*) AS total FROM mod_actions WHERE guild_id=? AND DATE(created_at)=?', [guildId, today]),
+                                dbGet('SELECT COUNT(*) AS total FROM join_analytics WHERE guild_id=? AND date=?', [guildId, today]),
+                            ]);
+                            totalMessages = Number(msgAll?.total || 0);
+                            messagesToday = Number(msgToday?.total || 0);
+                            totalCommands = Number(cmdAll?.total || 0);
+                            commandsToday = Number(cmdToday?.total || 0);
+                            totalModActions = Number(modAll?.total || 0);
+                            modActionsToday = Number(modToday?.total || 0);
+                            joinsToday = Number(joinsRow?.total || 0);
+                        } finally {
+                            botDb.close();
+                        }
+                    }
+                }
+
                 return res.json({
                     success: true,
-                    totalMembers: Number(guild?.memberCount || 0),
-                    totalMessages: 0,
-                    totalCommands: 0,
-                    totalModActions: 0,
-                    joinsToday: 0,
-                    messagesToday: 0,
-                    commandsToday: 0,
-                    modActionsToday: 0,
+                    totalMembers: memberCount,
+                    totalMessages,
+                    totalCommands,
+                    totalModActions,
+                    joinsToday,
+                    messagesToday,
+                    commandsToday,
+                    modActionsToday,
                 });
             } catch (err) {
                 console.error('[Dashboard API] /api/analytics/overview error:', err);
@@ -3251,11 +3497,19 @@ class DarklockPlatform {
      */
     async mountOn(existingApp, bot = null) {
         console.log('[Darklock Platform] Mounting on existing Express app...');
+
+        const sslKeyPath = path.join(__dirname, 'ssl', 'key.pem');
+        const sslCertPath = path.join(__dirname, 'ssl', 'cert.pem');
+        const hasSslCerts = fs.existsSync(sslKeyPath) && fs.existsSync(sslCertPath);
+        const isSecure = process.env.NODE_ENV === 'production' || process.env.FORCE_HTTPS === 'true' || hasSslCerts;
+
+        applyRouteSplitCsp(existingApp, isSecure);
         
         // Store and set bot reference if provided
         if (bot) {
             this.discordBot = bot;
             setPlatformDiscordBot?.(bot);
+            setAdminV4DiscordBot?.(bot);
             console.log('[Darklock Platform] Discord bot reference set for admin API');
         }
         
@@ -3284,6 +3538,13 @@ class DarklockPlatform {
             await initializeV4Schema();
             
             console.log('[Darklock Platform] ✅ Database and admin tables initialized');
+
+            try {
+                await this.hardwareHub.start();
+                console.log('[Darklock Platform] ✅ Hardware security hub initialized');
+            } catch (hubErr) {
+                console.warn('[Darklock Platform] ⚠ Hardware security hub unavailable:', hubErr.message || hubErr);
+            }
         } catch (err) {
             console.error('[Darklock Platform] Database initialization failed:', err);
         }
@@ -3361,10 +3622,7 @@ class DarklockPlatform {
             const { resolveView } = require('./utils/theme-resolver');
             let htmlPath = resolveView('home.html');
             if (!fs.existsSync(htmlPath)) {
-                const fallbackPath = resolveView('ridgeline.html');
-                htmlPath = fs.existsSync(fallbackPath)
-                    ? fallbackPath
-                    : path.join(__dirname, 'views', 'status.html');
+                htmlPath = path.join(__dirname, 'views', 'status.html');
             }
             let html = fs.readFileSync(htmlPath, 'utf8');
             
@@ -3735,6 +3993,11 @@ class DarklockPlatform {
             res.sendFile(path.join(__dirname, 'views/docs.html'));
         });
         
+        // Ridgeline product page (coming soon)
+        existingApp.get('/platform/ridgeline', (req, res) => {
+            res.sendFile(path.join(__dirname, 'views/ridgeline.html'));
+        });
+        
         // System Status page
         existingApp.get('/platform/status', (req, res) => {
             res.sendFile(path.join(__dirname, 'views/status.html'));
@@ -4066,6 +4329,9 @@ class DarklockPlatform {
         // Team Management API routes
         console.log('[Darklock Platform] Registering team management routes at /api/admin/team');
         existingApp.use('/api/admin/team', teamManagementRoutes);
+
+        // Hardware RFID admin API (USB Pico bridge status/challenges/cards)
+        existingApp.use('/api/admin/hardware', requireAdminAuth, hardwareApiRoutes);
         
 // Admin v4 API routes (Enterprise RBAC dashboard)
         // Never cache — prevents 304 loops where browser/Cloudflare serves stale redirects
@@ -4119,16 +4385,14 @@ class DarklockPlatform {
         
         // Platform dashboard auth helper
         const dashAuth = async (req, res, next) => {
-            const darklockToken = req.cookies?.darklock_token;
-            const dashboardToken = req.cookies?.dashboardToken;
-            const decoded = verifyDashboardSessionToken(darklockToken) || verifyDashboardSessionToken(dashboardToken);
-
-            if (!decoded) {
+            const session = await resolveDashboardSession(req);
+            if (!session) {
                 clearDashboardAuthCookies(req, res);
                 return res.status(401).json({ success: false, error: 'Session expired' });
             }
 
-            req.platformUser = decoded;
+            req.platformUser = session.decoded;
+            req.platformUserRecord = session.user;
             next();
         };
 
@@ -4225,9 +4489,11 @@ class DarklockPlatform {
         // Dashboard API - Get current user
         existingApp.get('/platform/dashboard/api/me', dashAuth, async (req, res) => {
             try {
-                const db = require('./utils/database');
-                const user = await db.getUserById(req.platformUser.userId);
-                if (!user) return res.status(404).json({ success: false, error: 'User not found' });
+                const user = req.platformUserRecord;
+                if (!user) {
+                    clearDashboardAuthCookies(req, res);
+                    return res.status(401).json({ success: false, error: 'Session expired' });
+                }
                 const settings = user.settings || {};
                 res.json({
                     success: true,
@@ -4257,30 +4523,12 @@ class DarklockPlatform {
         // Bot dashboard compatibility API: /api/me
         existingApp.get('/api/me', dashAuth, async (req, res) => {
             try {
-                const db = require('./utils/database');
-                const user = await db.getUserById(req.platformUser.userId);
+                const user = req.platformUserRecord;
                 if (!user) {
-                    const tokenUserId = String(req.platformUser.userId || req.platformUser.id || '0');
-                    const tokenAvatar = req.platformUser.avatar || null;
-                    let avatarUrl = null;
-                    if (tokenAvatar && /^\d+$/.test(tokenUserId)) {
-                        const ext = String(tokenAvatar).startsWith('a_') ? 'gif' : 'png';
-                        avatarUrl = `https://cdn.discordapp.com/avatars/${tokenUserId}/${tokenAvatar}.${ext}?size=128`;
-                    }
-
-                    return res.json({
-                        success: true,
-                        user: {
-                            id: tokenUserId,
-                            userId: tokenUserId,
-                            username: req.platformUser.username || 'User',
-                            globalName: req.platformUser.globalName || req.platformUser.username || 'User',
-                            role: req.platformUser.role || 'user',
-                            avatarUrl,
-                            avatar: null,
-                        }
-                    });
+                    clearDashboardAuthCookies(req, res);
+                    return res.status(401).json({ success: false, error: 'Session expired' });
                 }
+
                 // Build a ready-to-use avatar URL (stored as full URL or local path)
                 let avatarUrl = null;
                 if (user.avatar && (user.avatar.startsWith('http') || user.avatar.startsWith('/'))) {
@@ -4307,13 +4555,19 @@ class DarklockPlatform {
         // Bot status pill endpoint (polled by dashboard-live.js header pill)
         existingApp.get('/platform/api/bot/status', (req, res) => {
             try {
-                const fs = require('fs');
                 const statusPath = path.join(process.env.DATA_PATH || path.join(__dirname, '..', 'data'), 'bot_status.json');
+                const staleMs = Number(process.env.BOT_STATUS_STALE_MS || 120000);
                 let bot = { online: false };
                 if (fs.existsSync(statusPath)) {
                     const status = JSON.parse(fs.readFileSync(statusPath, 'utf8'));
-                    const ts = status.timestamp ? new Date(status.timestamp).getTime() : 0;
-                    const fresh = ts > 0 && (Date.now() - ts) < 30000; // status written every 5s
+                    const ts = parseStatusTimestampMs(
+                        status.timestamp
+                        || status.last_heartbeat
+                        || status.updated_at
+                        || status.timestampMs
+                        || status.ts
+                    );
+                    const fresh = typeof ts === 'number' && (Date.now() - ts) < staleMs;
                     if (status.online && fresh) {
                         bot = {
                             online: true,
@@ -4334,113 +4588,18 @@ class DarklockPlatform {
         // Bot dashboard compatibility API: /api/servers/list
         existingApp.get('/api/servers/list', dashAuth, async (req, res) => {
             try {
-                const db = require('./utils/database');
-                const fs = require('fs');
-                const path = require('path');
-                const user = await db.getUserById(req.platformUser.userId);
-                const tokenDiscordCandidate = String(
-                    req.platformUser?.oauthId
-                    || req.platformUser?.oauth_id
-                    || req.platformUser?.discordId
-                    || req.platformUser?.discord_id
-                    || req.platformUser?.userId
-                    || ''
-                );
-                const tokenDiscordUserId = /^\d+$/.test(tokenDiscordCandidate) ? tokenDiscordCandidate : null;
-                const resolvedDiscordUserId = (
-                    user?.oauth_provider === 'discord' && user?.oauth_id
-                )
-                    ? String(user.oauth_id)
-                    : tokenDiscordUserId;
-
-                // Load bot guild IDs from status file (written every 5s by the bot)
-                let botGuildIds = new Set();
-                try {
-                    const statusPath = path.join(process.cwd(), 'data', 'bot_status.json');
-                    const statusRaw = fs.readFileSync(statusPath, 'utf8');
-                    const status = JSON.parse(statusRaw);
-                    if (Array.isArray(status.guild_ids)) {
-                        status.guild_ids.forEach(id => botGuildIds.add(String(id)));
-                    }
-                } catch (_) { /* bot status not available */ }
-
-                // Get user's cached guild list
-                const settings = (typeof user?.settings === 'object' && user.settings) ? user.settings
-                    : (() => { try { return JSON.parse(user?.settings || '{}'); } catch(_) { return {}; } })();
-                let allGuilds = Array.isArray(settings.discord_guilds) ? settings.discord_guilds : [];
-
-                // Fallback: legacy dashboard JWTs can carry guilds directly.
-                if (allGuilds.length === 0 && Array.isArray(req.platformUser.guilds)) {
-                    allGuilds = req.platformUser.guilds.map(g => ({
-                        id: String(g.id),
-                        name: g.name || 'Unknown Server',
-                        icon: g.icon ? (String(g.icon).startsWith('http') ? g.icon : `https://cdn.discordapp.com/icons/${g.id}/${g.icon}.png?size=64`) : null,
-                        isOwner: g.isOwner === true || g.owner === true,
-                        permissions: String(g.permissions || '0'),
-                        memberCount: Number(g.memberCount || 0)
-                    }));
+                const user = req.platformUserRecord;
+                if (!user) {
+                    clearDashboardAuthCookies(req, res);
+                    return res.status(401).json({ success: false, error: 'Session expired' });
                 }
 
-                // Last-resort fallback: derive manageable guilds from live bot membership.
-                if (
-                    allGuilds.length === 0
-                    && resolvedDiscordUserId
-                    && this.discordBot?.client?.guilds?.cache
-                ) {
-                    const discoveredGuilds = [];
+                const allGuilds = getAuthorizedDashboardGuilds(user);
+                const botGuildIds = getBotGuildIdsFromStatusFile();
 
-                    for (const guild of this.discordBot.client.guilds.cache.values()) {
-                        const isOwner = String(guild.ownerId) === resolvedDiscordUserId;
-                        let hasAdministrator = false;
-                        let hasManageGuild = false;
-
-                        if (!isOwner) {
-                            const member = await guild.members.fetch(resolvedDiscordUserId).catch(() => null);
-                            hasAdministrator = !!member?.permissions?.has?.('Administrator');
-                            hasManageGuild = !!member?.permissions?.has?.('ManageGuild');
-                        }
-
-                        const hasManageAccess = isOwner || hasAdministrator || hasManageGuild;
-
-                        if (!hasManageAccess) continue;
-
-                        discoveredGuilds.push({
-                            id: String(guild.id),
-                            name: guild.name || 'Unknown Server',
-                            icon: guild.iconURL ? guild.iconURL({ size: 64 }) : null,
-                            isOwner,
-                            permissions: isOwner || hasAdministrator ? '8' : '32',
-                            memberCount: Number(guild.memberCount || 0)
-                        });
-                    }
-
-                    if (discoveredGuilds.length > 0) {
-                        allGuilds = discoveredGuilds;
-                    }
-                }
-
-                // Filter: bot must be in the guild AND user must have Administrator or Manage Server permission
-                const ADMINISTRATOR = 0x8n;
-                const MANAGE_GUILD = 0x20n;
-                let servers = allGuilds.filter(g => {
-                    if (botGuildIds.size > 0 && !botGuildIds.has(String(g.id))) return false;
-                    // isOwner always passes; otherwise check permissions bitmask
-                    if (g.isOwner) return true;
-                    try {
-                        const perms = BigInt(g.permissions || 0);
-                        return (perms & ADMINISTRATOR) !== 0n || (perms & MANAGE_GUILD) !== 0n;
-                    } catch (_) { return false; }
-                });
-
-                // If bot status is unavailable (no guild_ids), fall back to admin-permission filter only
-                if (botGuildIds.size === 0) {
-                    servers = allGuilds.filter(g => {
-                        if (g.isOwner) return true;
-                        try {
-                            const perms = BigInt(g.permissions || 0);
-                            return (perms & ADMINISTRATOR) !== 0n || (perms & MANAGE_GUILD) !== 0n;
-                        } catch (_) { return false; }
-                    });
+                let servers = allGuilds.filter((guild) => hasGuildManagementPermission(guild));
+                if (botGuildIds.size > 0) {
+                    servers = servers.filter((guild) => botGuildIds.has(String(guild.id)));
                 }
 
                 return res.json({ success: true, servers });
@@ -4453,20 +4612,28 @@ class DarklockPlatform {
         // Bot dashboard compatibility API: /api/server-info
         existingApp.get('/api/server-info', dashAuth, async (req, res) => {
             try {
+                const user = req.platformUserRecord;
+                if (!user) {
+                    clearDashboardAuthCookies(req, res);
+                    return res.status(401).json({ success: false, error: 'Session expired' });
+                }
+
                 const requestedId = String(req.query.guildId || '');
-                const guildCache = this.discordBot?.client?.guilds?.cache;
-                const guild = guildCache
-                    ? (requestedId ? guildCache.get(requestedId) : guildCache.first())
-                    : null;
-                if (!guild) {
+                const authorizedGuilds = getAuthorizedDashboardGuilds(user).filter((guild) => hasGuildManagementPermission(guild));
+                const selectedGuild = pickAuthorizedGuild(authorizedGuilds, requestedId);
+
+                if (!selectedGuild) {
                     return res.json({ success: true, name: 'No Server', memberCount: 0, icon: null });
                 }
+
+                const guildDetails = getBotGuildDetailsFromStatusFile();
+                const liveDetail = guildDetails[String(selectedGuild.id)] || {};
                 return res.json({
                     success: true,
-                    id: String(guild.id),
-                    name: guild.name || 'Unknown Server',
-                    memberCount: Number(guild.memberCount || 0),
-                    icon: guild.iconURL ? guild.iconURL({ size: 64 }) : null,
+                    id: String(selectedGuild.id),
+                    name: liveDetail.name || selectedGuild.name || 'Unknown Server',
+                    memberCount: Number(liveDetail.memberCount ?? selectedGuild.memberCount ?? 0),
+                    icon: liveDetail.icon || selectedGuild.icon || null,
                 });
             } catch (err) {
                 console.error('[Dashboard API] /api/server-info error:', err);
@@ -4477,21 +4644,66 @@ class DarklockPlatform {
         // Bot dashboard compatibility API: /api/analytics/overview
         existingApp.get('/api/analytics/overview', dashAuth, async (req, res) => {
             try {
+                const user = req.platformUserRecord;
+                if (!user) {
+                    clearDashboardAuthCookies(req, res);
+                    return res.status(401).json({ success: false, error: 'Session expired' });
+                }
+
                 const requestedId = String(req.query.guildId || '');
-                const guildCache = this.discordBot?.client?.guilds?.cache;
-                const guild = guildCache
-                    ? (requestedId ? guildCache.get(requestedId) : guildCache.first())
-                    : null;
+                const authorizedGuilds = getAuthorizedDashboardGuilds(user).filter((guild) => hasGuildManagementPermission(guild));
+                const selectedGuild = pickAuthorizedGuild(authorizedGuilds, requestedId);
+
+                const guildDetails = getBotGuildDetailsFromStatusFile();
+                const liveDetail = selectedGuild ? (guildDetails[String(selectedGuild.id)] || {}) : {};
+                const memberCount = Number(liveDetail.memberCount ?? selectedGuild?.memberCount ?? 0);
+
+                let totalMessages = 0, totalCommands = 0, totalModActions = 0;
+                let joinsToday = 0, messagesToday = 0, commandsToday = 0, modActionsToday = 0;
+
+                if (selectedGuild) {
+                    const guildId = String(selectedGuild.id);
+                    const botDbPath = getBotDbPath();
+                    if (fs.existsSync(botDbPath)) {
+                        const sqlite3 = require('sqlite3');
+                        const botDb = new sqlite3.Database(botDbPath, sqlite3.OPEN_READONLY);
+                        const dbGet = (sql, params) => new Promise((resolve) => {
+                            botDb.get(sql, params, (err, row) => resolve(err ? null : row));
+                        });
+                        try {
+                            const today = new Date().toISOString().slice(0, 10);
+                            const [msgAll, msgToday, cmdAll, cmdToday, modAll, modToday, joinsRow] = await Promise.all([
+                                dbGet('SELECT SUM(message_count) AS total FROM message_analytics WHERE guild_id=?', [guildId]),
+                                dbGet('SELECT SUM(message_count) AS total FROM message_analytics WHERE guild_id=? AND date=?', [guildId, today]),
+                                dbGet('SELECT COUNT(*) AS total FROM command_analytics WHERE guild_id=?', [guildId]),
+                                dbGet('SELECT COUNT(*) AS total FROM command_analytics WHERE guild_id=? AND date=?', [guildId, today]),
+                                dbGet('SELECT COUNT(*) AS total FROM mod_actions WHERE guild_id=?', [guildId]),
+                                dbGet('SELECT COUNT(*) AS total FROM mod_actions WHERE guild_id=? AND DATE(created_at)=?', [guildId, today]),
+                                dbGet('SELECT COUNT(*) AS total FROM join_analytics WHERE guild_id=? AND date=?', [guildId, today]),
+                            ]);
+                            totalMessages = Number(msgAll?.total || 0);
+                            messagesToday = Number(msgToday?.total || 0);
+                            totalCommands = Number(cmdAll?.total || 0);
+                            commandsToday = Number(cmdToday?.total || 0);
+                            totalModActions = Number(modAll?.total || 0);
+                            modActionsToday = Number(modToday?.total || 0);
+                            joinsToday = Number(joinsRow?.total || 0);
+                        } finally {
+                            botDb.close();
+                        }
+                    }
+                }
+
                 return res.json({
                     success: true,
-                    totalMembers: Number(guild?.memberCount || 0),
-                    totalMessages: 0,
-                    totalCommands: 0,
-                    totalModActions: 0,
-                    joinsToday: 0,
-                    messagesToday: 0,
-                    commandsToday: 0,
-                    modActionsToday: 0,
+                    totalMembers: memberCount,
+                    totalMessages,
+                    totalCommands,
+                    totalModActions,
+                    joinsToday,
+                    messagesToday,
+                    commandsToday,
+                    modActionsToday,
                 });
             } catch (err) {
                 console.error('[Dashboard API] /api/analytics/overview error:', err);
@@ -4678,6 +4890,14 @@ class DarklockPlatform {
                 
                 // Run session cleanup on startup
                 await db.cleanupExpiredSessions();
+
+                // Start USB hardware security hub (non-fatal if unavailable)
+                try {
+                    await this.hardwareHub.start();
+                    console.log('[Darklock Platform] ✅ Hardware security hub initialized');
+                } catch (hubErr) {
+                    console.warn('[Darklock Platform] ⚠ Hardware security hub unavailable:', hubErr.message || hubErr);
+                }
                 
                 // Schedule periodic cleanup (every hour)
                 setInterval(async () => {
@@ -5226,6 +5446,12 @@ class DarklockPlatform {
      * Stop server
      */
     stop() {
+        if (this.hardwareHub) {
+            this.hardwareHub.stop().catch((err) => {
+                console.warn('[Darklock Platform] Hardware hub stop warning:', err.message || err);
+            });
+        }
+
         if (this.server) {
             this.server.close();
             console.log('[Darklock Platform] Server stopped');

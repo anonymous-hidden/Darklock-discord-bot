@@ -34,6 +34,7 @@ module.exports = {
             { name: 'dm_warning_notification', type: 'BOOLEAN DEFAULT 1' },
             { name: 'warning_expiry_days', type: 'INTEGER DEFAULT 30' },
             { name: 'exempt_staff_automod', type: 'BOOLEAN DEFAULT 1' },
+            { name: 'mute_role_id', type: 'TEXT' },
 
             // === Appeal System ===
             { name: 'appeal_system_enabled', type: 'BOOLEAN DEFAULT 0' },
@@ -69,9 +70,9 @@ module.exports = {
             { name: 'raid_join_threshold', type: 'INTEGER DEFAULT 10' },
             { name: 'raid_time_window', type: 'INTEGER DEFAULT 10' },
             { name: 'raid_lockdown_duration_ms', type: 'INTEGER DEFAULT 300000' },
-            { name: 'raid_action', type: 'TEXT DEFAULT \'kick\'' },
+            { name: 'raid_action', type: 'TEXT DEFAULT \'quarantine\'' },
             { name: 'account_age_enabled', type: 'BOOLEAN DEFAULT 0' },
-            { name: 'min_account_age', type: 'INTEGER DEFAULT 24' },
+            { name: 'min_account_age', type: 'INTEGER DEFAULT 7' },
 
             // === Anti-Spam Advanced ===
             { name: 'spam_action', type: 'TEXT DEFAULT \'timeout\'' },

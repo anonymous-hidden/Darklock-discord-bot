@@ -7,12 +7,12 @@
     const _path = require('path');
     const _crypto = require('crypto');
     const REQUIRED = {
-        "file-protection/index.js": "48eab394765491a34ef7c8d8de4504c7b887f1aedf0c36f0203e247cb880eab6",
+        "file-protection/index.js": "cd04ba7c97aed1a2058d77f3523cee0b25a1176e8f9dbdb9b8d9e1be6f3694e2",
         "file-protection/agent/watcher.js": "a468e4d3d470ff5dda094bbe83b251b811c07f6f01048961bf4f3078c2badeee",
         "file-protection/agent/validator.js": "df803b1329264fb28b26f1772392a98aa25ff6dd0a62329fdf96ce6769124ec6",
         "file-protection/agent/baseline-manager.js": "7a1d2ef23cab7de954279f2cd3a7045a0e6ebcba260fe60e8587b43173ac68be",
         "file-protection/agent/protector.js": "baec13203d3efbf16d8a80cfdcf3edd60f54c27f6dbb72510e09d37667ff80f7",
-        "file-protection/agent/response-handler.js": "39473a827e2982901b725abd42698002292ad5b2f74cad10799196d41a310e17",
+        "file-protection/agent/response-handler.js": "bb4eb4686565dbd0024fa93cdba13bcf3921bbd0d7990e3074fd4a8ca9bd62a6",
         "file-protection/agent/file-enumerator.js": "ec90cb0812b7a1fba628e03ebf3faa57c66db18f0e6268f10f386dab54ec2752",
         "file-protection/agent/environment-guard.js": "80779afb4f2173fb95e13ec6f3d074f3adcb5ca4a1868cd0832a33373ae6d6f1",
         "file-protection/agent/hasher.js": "34ad46b31b89b845f300c7548b8d1da161df0aa78b65c919536bc058c55145ca",

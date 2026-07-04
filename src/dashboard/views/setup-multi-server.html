@@ -1,0 +1,1207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <style>html,body{background:#0a0a0f!important;color-scheme:dark}</style>
+    <meta name="color-scheme" content="dark">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="">
+    <title>Multi-Server Moderation - DarkLock Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="stylesheet" href="/css/design-system.css">
+    <link rel="stylesheet" href="/css/premium-gating.css">
+    <link id="dynamic-theme-stylesheet" rel="stylesheet" href="/api/v4/admin/theme/css">
+    <script src="/js/global-theme.js"></script>
+    <style>
+        .setup-page { min-height: 100vh; background: var(--ds-surface-0); }
+        .setup-nav {
+            position: sticky; top: 0; z-index: 100;
+            display: flex; align-items: center; justify-content: space-between;
+            padding: var(--ds-space-md) var(--ds-space-xl);
+            background: var(--ds-surface-1);
+            border-bottom: 1px solid var(--ds-border);
+            backdrop-filter: blur(12px);
+        }
+        .back-button { display: inline-flex; align-items: center; gap: 8px; padding: 8px 16px; background: var(--ds-surface-2); border: 1px solid var(--ds-border); border-radius: var(--ds-radius-md); color: var(--ds-text-primary); text-decoration: none; font-size: 14px; font-weight: 500; }
+        .back-button:hover { background: var(--ds-surface-3); border-color: var(--ds-primary); }
+        .setup-container { max-width: 1050px; margin: 0 auto; padding: var(--ds-space-xl) var(--ds-space-lg); }
+        .setup-header { margin-bottom: var(--ds-space-lg); }
+        .setup-header-icon { display: inline-flex; align-items: center; justify-content: center; width: 56px; height: 56px; background: var(--ds-primary-bg); border: 1px solid var(--ds-primary-border); border-radius: var(--ds-radius-lg); margin-bottom: var(--ds-space-md); }
+        .setup-header-icon i { font-size: 24px; color: var(--ds-primary); }
+        .setup-header h1 { font-size: 28px; font-weight: 700; color: var(--ds-text-primary); margin: 0 0 8px 0; }
+        .setup-header p { color: var(--ds-text-muted); font-size: 15px; margin: 0; max-width: 720px; }
+        .setup-card { background: var(--ds-surface-1); border: 1px solid var(--ds-border); border-radius: var(--ds-radius-lg); margin-bottom: var(--ds-space-lg); overflow: hidden; }
+        .setup-card-header { display: flex; align-items: center; justify-content: space-between; padding: var(--ds-space-lg); border-bottom: 1px solid var(--ds-border); background: var(--ds-surface-2); }
+        .setup-card-title { display: flex; align-items: center; gap: var(--ds-space-sm); }
+        .setup-card-title i { color: var(--ds-primary); font-size: 16px; }
+        .setup-card-title h3 { font-size: 15px; font-weight: 600; color: var(--ds-text-primary); margin: 0; }
+        .setup-card-body { padding: var(--ds-space-lg); }
+        .muted { color: var(--ds-text-muted); font-size: 13px; }
+        .ds-input, select.ds-input, textarea.ds-input { width: 100%; padding: 10px 12px; background: var(--ds-surface-2); border: 1px solid var(--ds-border); border-radius: var(--ds-radius-md); color: var(--ds-text-primary); font-size: 14px; font-family: inherit; }
+        textarea.ds-input { resize: vertical; min-height: 90px; }
+        .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+        .badge { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 99px; font-size: 11px; font-weight: 600; }
+        .badge.on { background: var(--ds-success-bg); color: var(--ds-success); border: 1px solid var(--ds-success-border); }
+        .badge.off { background: var(--ds-surface-2); color: var(--ds-text-muted); border: 1px solid var(--ds-border); }
+        .badge.main { background: rgba(0,212,255,.14); color: #00d4ff; border: 1px solid rgba(0,212,255,.35); }
+        .badge.warn { background: rgba(255,180,0,.14); color: #ffb400; border: 1px solid rgba(255,180,0,.35); }
+        .badge.danger { background: rgba(255,70,90,.14); color: #ff465a; border: 1px solid rgba(255,70,90,.35); }
+        .badge.info { background: rgba(99,102,241,.16); color: #a5b4fc; border: 1px solid rgba(99,102,241,.35); }
+
+        /* Tabs */
+        .msm-tabs { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: var(--ds-space-lg); border-bottom: 1px solid var(--ds-border); padding-bottom: 2px; position: sticky; top: 57px; background: var(--ds-surface-0); z-index: 50; }
+        .msm-tab { display: inline-flex; align-items: center; gap: 7px; padding: 9px 15px; background: transparent; border: none; border-bottom: 2px solid transparent; color: var(--ds-text-muted); font-size: 13.5px; font-weight: 600; cursor: pointer; border-radius: 8px 8px 0 0; white-space: nowrap; }
+        .msm-tab:hover { color: var(--ds-text-primary); background: var(--ds-surface-1); }
+        .msm-tab.active { color: var(--ds-primary); border-bottom-color: var(--ds-primary); }
+        .msm-tab .tab-badge { font-size: 10px; padding: 1px 6px; border-radius: 99px; background: rgba(255,180,0,.18); color: #ffb400; }
+        .msm-tab .tab-badge.zero { display: none; }
+        .tab-panel { display: none; }
+        .tab-panel.active { display: block; animation: fadeIn .18s ease; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+        /* Overview stat grid */
+        .stat-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(150px,1fr)); gap: 12px; }
+        .stat { background: var(--ds-surface-2); border: 1px solid var(--ds-border); border-radius: var(--ds-radius-md); padding: 14px; }
+        .stat .k { font-size: 12px; color: var(--ds-text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+        .stat .v { font-size: 22px; font-weight: 700; color: var(--ds-text-primary); margin-top: 4px; }
+
+        /* Hierarchy chart */
+        .hier { display: flex; flex-direction: column; align-items: center; gap: 0; padding: 8px 0 4px; }
+        .hier-node { display: flex; flex-direction: column; align-items: center; gap: 8px; background: var(--ds-surface-2); border: 1px solid var(--ds-border); border-radius: var(--ds-radius-md); padding: 12px 18px; min-width: 150px; text-align: center; }
+        .hier-node.is-main { border-color: rgba(0,212,255,.5); box-shadow: 0 0 0 1px rgba(0,212,255,.25) inset; }
+        .hier-node .icon { width: 40px; height: 40px; border-radius: 10px; background: var(--ds-surface-3); display: flex; align-items: center; justify-content: center; overflow: hidden; }
+        .hier-node .icon img { width: 100%; height: 100%; object-fit: cover; }
+        .hier-node .n-name { font-weight: 600; color: var(--ds-text-primary); font-size: 13px; }
+        .hier-connector { width: 2px; height: 22px; background: var(--ds-border); }
+        .hier-children { display: flex; gap: 18px; flex-wrap: wrap; justify-content: center; position: relative; padding-top: 22px; }
+        .hier-children::before { content: ''; position: absolute; top: 0; left: 10%; right: 10%; height: 2px; background: var(--ds-border); }
+        .hier-child-wrap { display: flex; flex-direction: column; align-items: center; }
+        .hier-child-wrap .hier-connector { height: 22px; }
+
+        .list-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px; border: 1px solid var(--ds-border); border-radius: var(--ds-radius-md); margin-bottom: 10px; background: var(--ds-surface-2); }
+        .list-item .li-main { display: flex; align-items: center; gap: 10px; min-width: 0; }
+        .li-title { font-weight: 600; color: var(--ds-text-primary); font-size: 14px; }
+        table.msm { width: 100%; border-collapse: collapse; font-size: 13px; }
+        table.msm th, table.msm td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--ds-border); color: var(--ds-text-secondary); vertical-align: top; }
+        table.msm th { color: var(--ds-text-muted); font-weight: 600; font-size: 12px; }
+        .toggle-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--ds-border); }
+        .toggle-row:last-child { border-bottom: none; }
+        .switch { position: relative; width: 44px; height: 24px; flex-shrink: 0; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; inset: 0; background: var(--ds-surface-3); border-radius: 99px; transition: .2s; }
+        .slider::before { content: ''; position: absolute; height: 18px; width: 18px; left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: .2s; }
+        input:checked + .slider { background: var(--ds-primary); }
+        input:checked + .slider::before { transform: translateX(20px); }
+        .hidden { display: none !important; }
+        .status-msg { margin-top: 12px; font-size: 13px; }
+        .status-msg.ok { color: var(--ds-success); }
+        .status-msg.err { color: #ff465a; }
+        .sev-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; }
+        .selector-wrap { position: relative; flex: 1; min-width: 220px; }
+        .selector-menu {
+            position: absolute;
+            left: 0;
+            right: 0;
+            top: calc(100% + 4px);
+            z-index: 80;
+            max-height: 240px;
+            overflow-y: auto;
+            background: var(--ds-surface-2);
+            border: 1px solid var(--ds-border);
+            border-radius: var(--ds-radius-md);
+            box-shadow: 0 10px 24px rgba(0,0,0,.28);
+            padding: 4px;
+        }
+        .selector-option {
+            width: 100%;
+            border: none;
+            background: transparent;
+            color: var(--ds-text-primary);
+            text-align: left;
+            border-radius: 8px;
+            padding: 8px 10px;
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+        .selector-option:hover { background: var(--ds-surface-3); }
+        .selector-option-name { font-weight: 600; font-size: 13px; }
+        .selector-option-meta { font-size: 12px; color: var(--ds-text-muted); }
+        .selector-empty { padding: 10px; color: var(--ds-text-muted); font-size: 12px; }
+
+        /* Enterprise lock overlay */
+        .ent-lock { position: fixed; inset: 0; z-index: 9000; background: rgba(6,6,12,.92); display: flex; align-items: center; justify-content: center; padding: 20px; }
+        .ent-lock-card { max-width: 460px; text-align: center; background: var(--ds-surface-1); border: 1px solid var(--ds-border); border-radius: 18px; padding: 44px 34px; }
+        .ent-lock-icon { width: 78px; height: 78px; margin: 0 auto 22px; border-radius: 50%; background: linear-gradient(135deg,#7b5cff,#00d4ff); display: flex; align-items: center; justify-content: center; }
+        .ent-lock-icon i { font-size: 34px; color: #fff; }
+        .ent-lock-card h2 { color: var(--ds-text-primary); margin: 0 0 12px; font-size: 24px; }
+        .ent-lock-card p { color: var(--ds-text-muted); margin: 0 0 26px; line-height: 1.6; }
+    </style>
+</head>
+<body class="setup-page">
+    <!-- Enterprise lock (shown when backend reports the guild is not Enterprise) -->
+    <div class="ent-lock hidden" id="enterpriseLock">
+        <div class="ent-lock-card">
+            <div class="ent-lock-icon"><i class="fas fa-crown"></i></div>
+            <h2>Enterprise Feature</h2>
+            <p>Multi-Server Moderation links several Discord servers into one moderation
+               network so bans, watchlists, announcements and other actions can be shared
+               securely. This feature is available on the <strong>Enterprise</strong> plan.</p>
+            <a href="/payment.html" class="ds-btn ds-btn-primary"><i class="fas fa-crown"></i> Upgrade to Enterprise</a>
+            <a href="/dashboard" class="ds-btn ds-btn-secondary" style="margin-left:10px;">Back to Dashboard</a>
+        </div>
+    </div>
+
+    <nav class="setup-nav">
+        <a href="/dashboard" class="back-button"><i class="fas fa-arrow-left"></i> Dashboard</a>
+        <div class="muted" id="navGuildName"></div>
+    </nav>
+
+    <main class="setup-container" id="mainContent" style="opacity:0;">
+        <div class="setup-header">
+            <div class="setup-header-icon"><i class="fas fa-network-wired"></i></div>
+            <h1>Multi-Server Moderation</h1>
+            <p>Link trusted servers into one moderation network. Bans, kicks, timeouts,
+               warnings and unbans can be shared, backed by a shared watchlist and network
+               announcements. Security first: every linked server opts in, manual review is
+               the default, and owners/exempt users are always protected.</p>
+        </div>
+
+        <div id="statusBanner"></div>
+
+        <!-- No network yet -->
+        <div class="setup-card hidden" id="noNetworkCard">
+            <div class="setup-card-header"><div class="setup-card-title"><i class="fas fa-plus-circle"></i><h3>Create a Moderation Network</h3></div></div>
+            <div class="setup-card-body">
+                <p class="muted" style="margin-top:0;">This server will become the <strong>main</strong> (top) server of the network.
+                   Only the server owner can create a network.</p>
+                <div class="row">
+                    <input class="ds-input" id="networkName" placeholder="Network name (e.g. My Community Network)" style="flex:1;min-width:220px;" maxlength="80">
+                    <button class="ds-btn ds-btn-primary" id="createNetworkBtn"><i class="fas fa-sitemap"></i> Create Network</button>
+                </div>
+                <div class="status-msg" id="createMsg"></div>
+            </div>
+        </div>
+
+        <!-- Network exists -->
+        <div id="networkView" class="hidden">
+            <!-- Panic banner -->
+            <div class="setup-card hidden" id="panicBanner" style="border-color:rgba(255,70,90,.5);">
+                <div class="setup-card-body row" style="justify-content:space-between;">
+                    <div><span class="badge danger"><i class="fas fa-triangle-exclamation"></i> Network Paused</span>
+                        <span class="muted" style="margin-left:10px;" id="panicBannerReason">All cross-server enforcement is halted.</span></div>
+                </div>
+            </div>
+
+            <!-- Tab navigation -->
+            <div class="msm-tabs" id="msmTabs">
+                <button class="msm-tab active" data-tab="overview"><i class="fas fa-gauge-high"></i> Overview</button>
+                <button class="msm-tab" data-tab="servers"><i class="fas fa-server"></i> Linked Servers</button>
+                <button class="msm-tab main-only hidden" data-tab="invites"><i class="fas fa-paper-plane"></i> Invites</button>
+                <button class="msm-tab" data-tab="sync"><i class="fas fa-sliders"></i> Sync Settings</button>
+                <button class="msm-tab" data-tab="review"><i class="fas fa-user-clock"></i> Review <span class="tab-badge zero" id="tabReviewBadge">0</span></button>
+                <button class="msm-tab" data-tab="announcements"><i class="fas fa-bullhorn"></i> Announcements <span class="tab-badge zero" id="tabAnnBadge">0</span></button>
+                <button class="msm-tab" data-tab="watchlist"><i class="fas fa-user-secret"></i> Watchlist</button>
+                <button class="msm-tab" data-tab="exemptions"><i class="fas fa-shield-halved"></i> Exemptions</button>
+                <button class="msm-tab" data-tab="audit"><i class="fas fa-scroll"></i> Audit Log</button>
+                <button class="msm-tab main-only hidden" data-tab="danger"><i class="fas fa-triangle-exclamation"></i> Controls</button>
+            </div>
+
+            <!-- OVERVIEW -->
+            <section class="tab-panel active" data-panel="overview">
+                <div class="setup-card">
+                    <div class="setup-card-header">
+                        <div class="setup-card-title"><i class="fas fa-sitemap"></i><h3 id="networkTitle">Network</h3></div>
+                        <span id="networkStateBadge"></span>
+                    </div>
+                    <div class="setup-card-body">
+                        <p class="muted" id="networkDesc" style="margin-top:0;"></p>
+                        <div class="stat-grid" id="overviewStats" style="margin:14px 0;"></div>
+                        <div class="hier" id="hierChart"></div>
+                    </div>
+                </div>
+
+                <!-- Network settings (main + owner only) -->
+                <div class="setup-card main-only hidden" id="networkSettingsCard">
+                    <div class="setup-card-header"><div class="setup-card-title"><i class="fas fa-gear"></i><h3>Network Settings &amp; Defaults</h3></div></div>
+                    <div class="setup-card-body">
+                        <p class="muted" style="margin-top:0;">Network-wide identity and the default handling mode suggested to
+                           servers that join. Joining servers always keep full local control.</p>
+                        <div style="margin-bottom:12px;">
+                            <label class="muted">Network name</label>
+                            <input class="ds-input" id="netName" maxlength="80" style="margin-top:4px;">
+                        </div>
+                        <div style="margin-bottom:12px;">
+                            <label class="muted">Description (optional)</label>
+                            <textarea class="ds-input" id="netDescription" maxlength="500" style="margin-top:4px;min-height:60px;"></textarea>
+                        </div>
+                        <div class="row" style="margin-bottom:12px;">
+                            <div style="flex:1;min-width:200px;">
+                                <label class="muted">Network status</label>
+                                <select class="ds-input" id="netStatus" style="margin-top:4px;">
+                                    <option value="active">Active</option>
+                                    <option value="paused">Paused (halt all sync)</option>
+                                    <option value="disabled">Disabled</option>
+                                </select>
+                            </div>
+                            <div style="flex:1;min-width:200px;">
+                                <label class="muted">Default action mode</label>
+                                <select class="ds-input" id="netDefaultMode" style="margin-top:4px;">
+                                    <option value="log">Log only</option>
+                                    <option value="review">Review (recommended)</option>
+                                    <option value="auto">Auto-enforce</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="row" style="justify-content:flex-end;">
+                            <button class="ds-btn ds-btn-primary" id="saveNetworkBtn"><i class="fas fa-save"></i> Save Network Settings</button>
+                        </div>
+                        <div class="status-msg" id="netSettingsMsg"></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- LINKED SERVERS -->
+            <section class="tab-panel" data-panel="servers">
+                <div class="setup-card">
+                    <div class="setup-card-header"><div class="setup-card-title"><i class="fas fa-server"></i><h3>Linked Servers</h3></div></div>
+                    <div class="setup-card-body" id="linkedServers"></div>
+                </div>
+            </section>
+
+            <!-- INVITES (main only) -->
+            <section class="tab-panel" data-panel="invites">
+                <div class="setup-card" id="inviteCard">
+                    <div class="setup-card-header"><div class="setup-card-title"><i class="fas fa-paper-plane"></i><h3>Invite a Server</h3></div></div>
+                    <div class="setup-card-body">
+                        <p class="muted" style="margin-top:0;">Darklock sends an invitation with a <strong>Join</strong> button into the target
+                           server. An admin there must approve before any link is created. No force-linking.</p>
+                        <div class="row">
+                            <input class="ds-input" id="targetGuildId" placeholder="Target server ID (must have Darklock)" style="flex:1;min-width:220px;">
+                            <button class="ds-btn ds-btn-primary" id="sendInviteBtn"><i class="fas fa-paper-plane"></i> Send Invitation</button>
+                        </div>
+                        <div class="status-msg" id="inviteMsg"></div>
+                        <div id="pendingRequests" style="margin-top:16px;"></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SYNC SETTINGS -->
+            <section class="tab-panel" data-panel="sync">
+                <div class="setup-card">
+                    <div class="setup-card-header"><div class="setup-card-title"><i class="fas fa-sliders"></i><h3>This Server's Sync Settings</h3></div></div>
+                    <div class="setup-card-body">
+                        <p class="muted" style="margin-top:0;">Choose which network actions this server accepts, and whether they
+                           apply automatically or wait for manual review. You are always in control of what happens here.</p>
+                        <div class="toggle-row"><div><div class="li-title">Sync Bans</div><div class="muted">Apply network bans here.</div></div>
+                            <label class="switch"><input type="checkbox" id="syncBans"><span class="slider"></span></label></div>
+                        <div class="toggle-row"><div><div class="li-title">Sync Unbans</div><div class="muted">Lift a ban here when the network unbans a user.</div></div>
+                            <label class="switch"><input type="checkbox" id="syncUnbans"><span class="slider"></span></label></div>
+                        <div class="toggle-row"><div><div class="li-title">Sync Kicks</div><div class="muted">Apply network kicks here.</div></div>
+                            <label class="switch"><input type="checkbox" id="syncKicks"><span class="slider"></span></label></div>
+                        <div class="toggle-row"><div><div class="li-title">Sync Timeouts</div><div class="muted">Apply network timeouts here.</div></div>
+                            <label class="switch"><input type="checkbox" id="syncTimeouts"><span class="slider"></span></label></div>
+                        <div class="toggle-row"><div><div class="li-title">Sync Warnings</div><div class="muted">Record network warnings here.</div></div>
+                            <label class="switch"><input type="checkbox" id="syncWarns"><span class="slider"></span></label></div>
+                        <div class="toggle-row"><div><div class="li-title">Accept Watchlist Alerts</div><div class="muted">Be notified when a watchlisted user joins this server.</div></div>
+                            <label class="switch"><input type="checkbox" id="acceptWatchlist"><span class="slider"></span></label></div>
+                        <div class="toggle-row"><div><div class="li-title">Enforcement Mode</div>
+                            <div class="muted">Manual review is safest. Automatic applies actions instantly.</div></div>
+                            <select class="ds-input" id="enforcementMode" style="width:200px;">
+                                <option value="manual">Manual review (default)</option>
+                                <option value="auto">Automatic enforcement</option>
+                            </select></div>
+                        <div class="row" style="justify-content:flex-end;margin-top:14px;">
+                            <button class="ds-btn ds-btn-primary" id="saveSyncBtn"><i class="fas fa-save"></i> Save Settings</button>
+                        </div>
+                        <div class="status-msg" id="syncMsg"></div>
+                    </div>
+                </div>
+
+                <!-- Announcement handling -->
+                <div class="setup-card">
+                    <div class="setup-card-header"><div class="setup-card-title"><i class="fas fa-bullhorn"></i><h3>Announcement Handling</h3></div></div>
+                    <div class="setup-card-body">
+                        <p class="muted" style="margin-top:0;">Decide how network announcements are handled in this server.</p>
+                        <div class="toggle-row"><div><div class="li-title">Announcement mode</div>
+                            <div class="muted">Off ignores them, Review holds for approval, Auto posts immediately.</div></div>
+                            <select class="ds-input" id="announceMode" style="width:200px;">
+                                <option value="off">Off</option>
+                                <option value="review">Review (default)</option>
+                                <option value="auto">Auto-post</option>
+                            </select></div>
+                        <div class="toggle-row"><div><div class="li-title">Minimum urgency</div>
+                            <div class="muted">Only receive announcements at or above this urgency.</div></div>
+                            <select class="ds-input" id="announceMinUrgency" style="width:200px;">
+                                <option value="normal">Normal &amp; above</option>
+                                <option value="urgent">Urgent only</option>
+                            </select></div>
+                        <div style="margin-top:10px;">
+                            <label class="muted">Announcement channel ID (where posts go)</label>
+                            <input class="ds-input" id="announceChannelId" placeholder="Channel ID" style="margin-top:4px;">
+                        </div>
+                        <div class="row" style="justify-content:flex-end;margin-top:14px;">
+                            <button class="ds-btn ds-btn-primary" id="saveAnnounceBtn"><i class="fas fa-save"></i> Save</button>
+                        </div>
+                        <div class="status-msg" id="announceSettingsMsg"></div>
+                    </div>
+                </div>
+
+                <!-- Server-level pause -->
+                <div class="setup-card">
+                    <div class="setup-card-header"><div class="setup-card-title"><i class="fas fa-circle-pause"></i><h3>Server Pause</h3></div></div>
+                    <div class="setup-card-body">
+                        <p class="muted" style="margin-top:0;">Temporarily pause this server's participation without leaving the network.</p>
+                        <div class="toggle-row"><div><div class="li-title">Pause incoming sync</div><div class="muted">Stop receiving actions from the network.</div></div>
+                            <label class="switch"><input type="checkbox" id="pausedIn"><span class="slider"></span></label></div>
+                        <div class="toggle-row"><div><div class="li-title">Pause outgoing sync</div><div class="muted">Stop sending this server's actions to the network.</div></div>
+                            <label class="switch"><input type="checkbox" id="pausedOut"><span class="slider"></span></label></div>
+                        <div class="row" style="justify-content:flex-end;margin-top:14px;">
+                            <button class="ds-btn ds-btn-secondary" id="saveServerPauseBtn"><i class="fas fa-save"></i> Save Pause State</button>
+                        </div>
+                        <div class="status-msg" id="serverPauseMsg"></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- REVIEW QUEUE -->
+            <section class="tab-panel" data-panel="review">
+                <div class="setup-card">
+                    <div class="setup-card-header"><div class="setup-card-title"><i class="fas fa-user-clock"></i><h3>Review Queue</h3></div>
+                        <span class="badge off" id="reviewCount">0</span></div>
+                    <div class="setup-card-body" id="reviewQueue"><p class="muted">No actions awaiting review.</p></div>
+                </div>
+                <div class="setup-card">
+                    <div class="setup-card-header"><div class="setup-card-title"><i class="fas fa-clock-rotate-left"></i><h3>Recent Cross-Server Actions</h3></div></div>
+                    <div class="setup-card-body" id="recentActions"><p class="muted">No actions yet.</p></div>
+                </div>
+            </section>
+
+            <!-- ANNOUNCEMENTS -->
+            <section class="tab-panel" data-panel="announcements">
+                <div class="setup-card main-only hidden" id="publishCard">
+                    <div class="setup-card-header"><div class="setup-card-title"><i class="fas fa-bullhorn"></i><h3>Publish Announcement</h3></div></div>
+                    <div class="setup-card-body">
+                        <p class="muted" style="margin-top:0;">Broadcast to every linked server. Each server decides how it is
+                           delivered based on its announcement handling settings.</p>
+                        <div class="row" style="margin-bottom:10px;">
+                            <div style="flex:1;min-width:180px;">
+                                <label class="muted">Type</label>
+                                <select class="ds-input" id="annType" style="margin-top:4px;">
+                                    <option value="network_update">Network update</option>
+                                    <option value="security_alert">Security alert</option>
+                                    <option value="raid_warning">Raid warning</option>
+                                    <option value="phishing_warning">Phishing warning</option>
+                                    <option value="rule_update">Rule update</option>
+                                    <option value="maintenance">Maintenance</option>
+                                    <option value="emergency">Emergency</option>
+                                </select>
+                            </div>
+                            <div style="flex:1;min-width:180px;">
+                                <label class="muted">Urgency</label>
+                                <select class="ds-input" id="annUrgency" style="margin-top:4px;">
+                                    <option value="normal">Normal</option>
+                                    <option value="urgent">Urgent</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div style="margin-bottom:10px;">
+                            <label class="muted">Title</label>
+                            <input class="ds-input" id="annTitle" maxlength="200" style="margin-top:4px;" placeholder="Short headline">
+                        </div>
+                        <div style="margin-bottom:10px;">
+                            <label class="muted">Message</label>
+                            <textarea class="ds-input" id="annBody" maxlength="3000" style="margin-top:4px;" placeholder="What do you want to tell the network?"></textarea>
+                        </div>
+                        <div class="row" style="justify-content:flex-end;">
+                            <button class="ds-btn ds-btn-primary" id="publishAnnBtn"><i class="fas fa-paper-plane"></i> Publish</button>
+                        </div>
+                        <div class="status-msg" id="publishMsg"></div>
+                    </div>
+                </div>
+
+                <div class="setup-card member-only hidden" id="pendingAnnCard">
+                    <div class="setup-card-header"><div class="setup-card-title"><i class="fas fa-inbox"></i><h3>Announcements Awaiting Your Review</h3></div></div>
+                    <div class="setup-card-body" id="pendingAnnouncements"><p class="muted">Nothing awaiting review.</p></div>
+                </div>
+
+                <div class="setup-card">
+                    <div class="setup-card-header"><div class="setup-card-title"><i class="fas fa-list"></i><h3>Announcement History</h3></div></div>
+                    <div class="setup-card-body" id="announcementList"><p class="muted">No announcements yet.</p></div>
+                </div>
+            </section>
+
+            <!-- WATCHLIST -->
+            <section class="tab-panel" data-panel="watchlist">
+                <div class="setup-card">
+                    <div class="setup-card-header"><div class="setup-card-title"><i class="fas fa-user-plus"></i><h3>Add to Shared Watchlist</h3></div></div>
+                    <div class="setup-card-body">
+                        <p class="muted" style="margin-top:0;">Flag a user so linked servers are alerted if they join. A watchlist
+                           entry is context — never automatic guilt. Include a reason and evidence.</p>
+                        <div class="row" style="margin-bottom:10px;">
+                            <div class="selector-wrap">
+                                <input class="ds-input" id="wlUserSearch" placeholder="Search user by name" autocomplete="off">
+                                <input type="hidden" id="wlUserId">
+                                <div class="selector-menu hidden" id="wlUserMenu"></div>
+                            </div>
+                            <select class="ds-input" id="wlSeverity" style="width:150px;">
+                                <option value="1">Severity 1 (low)</option>
+                                <option value="2">Severity 2</option>
+                                <option value="3">Severity 3 (med)</option>
+                                <option value="4">Severity 4</option>
+                                <option value="5">Severity 5 (high)</option>
+                            </select>
+                        </div>
+                        <div style="margin-bottom:10px;">
+                            <label class="muted">Reason</label>
+                            <input class="ds-input" id="wlReason" maxlength="500" style="margin-top:4px;" placeholder="Why is this user flagged?">
+                        </div>
+                        <div style="margin-bottom:10px;">
+                            <label class="muted">Evidence (optional)</label>
+                            <textarea class="ds-input" id="wlEvidence" maxlength="1000" style="margin-top:4px;min-height:60px;" placeholder="Links, message IDs, context"></textarea>
+                        </div>
+                        <div class="row" style="justify-content:flex-end;">
+                            <button class="ds-btn ds-btn-primary" id="addWatchlistBtn"><i class="fas fa-user-secret"></i> Add to Watchlist</button>
+                        </div>
+                        <div class="status-msg" id="watchlistMsg"></div>
+                    </div>
+                </div>
+                <div class="setup-card">
+                    <div class="setup-card-header"><div class="setup-card-title"><i class="fas fa-user-secret"></i><h3>Shared Watchlist</h3></div></div>
+                    <div class="setup-card-body" id="watchlistEntries"><p class="muted">Watchlist is empty.</p></div>
+                </div>
+            </section>
+
+            <!-- EXEMPTIONS -->
+            <section class="tab-panel" data-panel="exemptions">
+                <div class="setup-card">
+                    <div class="setup-card-header"><div class="setup-card-title"><i class="fas fa-shield-halved"></i><h3>Exemptions</h3></div></div>
+                    <div class="setup-card-body">
+                        <p class="muted" style="margin-top:0;">Exempt users and roles are never actioned by cross-server enforcement.</p>
+                        <div class="row" style="margin-bottom:8px;">
+                            <div class="selector-wrap">
+                                <input class="ds-input" id="exemptUserSearch" placeholder="Search user by name" autocomplete="off">
+                                <input type="hidden" id="exemptUserId">
+                                <div class="selector-menu hidden" id="exemptUserMenu"></div>
+                            </div>
+                            <label class="muted row" style="gap:6px;"><input type="checkbox" id="exemptNetworkWide"> Network-wide</label>
+                            <button class="ds-btn ds-btn-secondary" id="addExemptUserBtn"><i class="fas fa-plus"></i> Exempt User</button>
+                        </div>
+                        <div id="exemptUsers" style="margin-bottom:18px;"></div>
+                        <div class="row" style="margin-bottom:8px;">
+                            <select class="ds-input" id="exemptRoleId" style="flex:1;min-width:220px;">
+                                <option value="">Select role...</option>
+                            </select>
+                            <button class="ds-btn ds-btn-secondary" id="addExemptRoleBtn"><i class="fas fa-plus"></i> Exempt Role</button>
+                        </div>
+                        <div id="exemptRoles"></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- AUDIT LOG -->
+            <section class="tab-panel" data-panel="audit">
+                <div class="setup-card">
+                    <div class="setup-card-header">
+                        <div class="setup-card-title"><i class="fas fa-scroll"></i><h3>Network Audit Log</h3></div>
+                        <button class="ds-btn ds-btn-secondary" id="refreshAuditBtn"><i class="fas fa-rotate"></i> Refresh</button>
+                    </div>
+                    <div class="setup-card-body" id="auditLog"><p class="muted">Loading audit log…</p></div>
+                </div>
+            </section>
+
+            <!-- CONTROLS / DANGER (main + owner) -->
+            <section class="tab-panel" data-panel="danger">
+                <div class="setup-card" style="border-color:rgba(255,70,90,.4);">
+                    <div class="setup-card-header"><div class="setup-card-title"><i class="fas fa-triangle-exclamation" style="color:#ff465a;"></i><h3>Network Controls</h3></div></div>
+                    <div class="setup-card-body">
+                        <div class="toggle-row"><div><div class="li-title">Panic Switch</div>
+                            <div class="muted">Instantly halt all cross-server enforcement network-wide.</div></div>
+                            <button class="ds-btn ds-btn-secondary" id="panicBtn"><i class="fas fa-pause"></i> Pause Network</button></div>
+                        <div class="toggle-row"><div><div class="li-title">Dissolve Network</div>
+                            <div class="muted">Permanently delete the network and unlink all servers.</div></div>
+                            <button class="ds-btn ds-btn-secondary" id="deleteNetworkBtn" style="color:#ff465a;border-color:rgba(255,70,90,.4);"><i class="fas fa-trash"></i> Dissolve</button></div>
+                        <div class="status-msg" id="dangerMsg"></div>
+                    </div>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <script src="/js/secure-auth.js"></script>
+    <script>
+        const SNOWFLAKE_RE = /^\d{17,20}$/;
+        let guildId = null;
+        let ROLE_CACHE = [];
+        let ROLE_CACHE_GUILD_ID = null;
+        const MEMBER_CACHE = new Map();
+
+        function isValidSnowflake(id) {
+            return SNOWFLAKE_RE.test(String(id || '').trim());
+        }
+
+        function appendGuildId(path, id) {
+            if (!id || path.includes('guildId=')) return path;
+            return path + (path.includes('?') ? '&' : '?') + 'guildId=' + encodeURIComponent(id);
+        }
+
+        function readStoredGuildId() {
+            const urlGuild = new URLSearchParams(window.location.search).get('guildId');
+            const candidates = [
+                localStorage.getItem('selectedGuildId'),
+                localStorage.getItem('selectedGuild'),
+                urlGuild
+            ];
+            for (const value of candidates) {
+                if (isValidSnowflake(value)) return String(value).trim();
+            }
+            return null;
+        }
+
+        async function ensureGuildId() {
+            if (isValidSnowflake(guildId)) return guildId;
+
+            const stored = readStoredGuildId();
+            if (stored) {
+                guildId = stored;
+                localStorage.setItem('selectedGuildId', guildId);
+                return guildId;
+            }
+
+            // Fallback for direct navigation/bookmarks where localStorage is stale or empty.
+            try {
+                const res = await fetch('/api/me', { credentials: 'include' });
+                const data = await res.json().catch(() => ({}));
+                const candidate = data?.user?.currentGuildId || data?.user?.accessGuild || data?.user?.guildId;
+                if (isValidSnowflake(candidate)) {
+                    guildId = String(candidate).trim();
+                    localStorage.setItem('selectedGuildId', guildId);
+                    return guildId;
+                }
+            } catch (_) {}
+
+            return null;
+        }
+
+        let STATE = null;
+
+        async function fetchGuildRoles(force = false) {
+            const gid = await ensureGuildId();
+            if (!gid) return [];
+            if (!force && ROLE_CACHE_GUILD_ID === gid && ROLE_CACHE.length) return ROLE_CACHE;
+            const roles = await api('/api/guild/' + encodeURIComponent(gid) + '/roles');
+            ROLE_CACHE = Array.isArray(roles) ? roles : [];
+            ROLE_CACHE_GUILD_ID = gid;
+            return ROLE_CACHE;
+        }
+
+        function populateRoleSelector() {
+            const select = document.getElementById('exemptRoleId');
+            if (!select) return;
+            const current = select.value;
+            select.innerHTML = '<option value="">Select role...</option>' + ROLE_CACHE.map(r =>
+                `<option value="${esc(r.id)}">${esc(r.name)} (${esc(r.id)})</option>`
+            ).join('');
+            if (current && ROLE_CACHE.some(r => String(r.id) === current)) {
+                select.value = current;
+            }
+        }
+
+        async function ensureRoleSelector() {
+            try {
+                await fetchGuildRoles();
+                populateRoleSelector();
+            } catch (_) {
+                // Non-fatal: selector will remain empty if role list cannot be loaded.
+            }
+        }
+
+        async function searchGuildMembers(query) {
+            const gid = await ensureGuildId();
+            if (!gid || !query || query.length < 2) return [];
+            const data = await api('/api/guild/' + encodeURIComponent(gid) + '/members/search?q=' + encodeURIComponent(query) + '&limit=20');
+            const members = Array.isArray(data) ? data : (data.members || []);
+            for (const m of members) {
+                if (m && m.id) MEMBER_CACHE.set(String(m.id), m);
+            }
+            return members;
+        }
+
+        function memberLabel(m) {
+            const display = m?.displayName || m?.username || 'Unknown user';
+            const username = m?.username ? ('@' + m.username) : '';
+            return username && username !== ('@' + display)
+                ? `${display} (${username})`
+                : display;
+        }
+
+        function clearUserSelector(searchInputId, hiddenInputId, menuId) {
+            const search = document.getElementById(searchInputId);
+            const hidden = document.getElementById(hiddenInputId);
+            const menu = document.getElementById(menuId);
+            if (search) search.value = '';
+            if (hidden) hidden.value = '';
+            if (menu) menu.classList.add('hidden');
+        }
+
+        function initUserSelector(searchInputId, hiddenInputId, menuId) {
+            const search = document.getElementById(searchInputId);
+            const hidden = document.getElementById(hiddenInputId);
+            const menu = document.getElementById(menuId);
+            if (!search || !hidden || !menu || search.dataset.bound === '1') return;
+            search.dataset.bound = '1';
+
+            let timer = null;
+            const hideMenu = () => menu.classList.add('hidden');
+
+            const renderResults = (members) => {
+                if (!members.length) {
+                    menu.innerHTML = '<div class="selector-empty">No members found.</div>';
+                    menu.classList.remove('hidden');
+                    return;
+                }
+                menu.innerHTML = members.map(m => `
+                    <button type="button" class="selector-option" data-user-id="${esc(m.id)}">
+                        <span class="selector-option-name">${esc(memberLabel(m))}</span>
+                        <span class="selector-option-meta">${esc(m.id)}</span>
+                    </button>
+                `).join('');
+                menu.querySelectorAll('.selector-option').forEach(btn => {
+                    btn.addEventListener('click', () => {
+                        const id = btn.getAttribute('data-user-id') || '';
+                        const m = MEMBER_CACHE.get(String(id)) || { id, username: id, displayName: id };
+                        hidden.value = String(id);
+                        search.value = memberLabel(m);
+                        hideMenu();
+                    });
+                });
+                menu.classList.remove('hidden');
+            };
+
+            const runSearch = async () => {
+                const q = search.value.trim();
+                hidden.value = '';
+                if (q.length < 2) {
+                    hideMenu();
+                    return;
+                }
+                menu.innerHTML = '<div class="selector-empty">Searching...</div>';
+                menu.classList.remove('hidden');
+                try {
+                    const members = await searchGuildMembers(q);
+                    renderResults(members);
+                } catch (_) {
+                    menu.innerHTML = '<div class="selector-empty">Search failed.</div>';
+                    menu.classList.remove('hidden');
+                }
+            };
+
+            search.addEventListener('input', () => {
+                clearTimeout(timer);
+                timer = setTimeout(runSearch, 220);
+            });
+            search.addEventListener('focus', () => {
+                if (search.value.trim().length >= 2) runSearch();
+            });
+            document.addEventListener('click', (e) => {
+                if (e.target === search || menu.contains(e.target)) return;
+                hideMenu();
+            });
+        }
+
+        function initSelectors() {
+            initUserSelector('wlUserSearch', 'wlUserId', 'wlUserMenu');
+            initUserSelector('exemptUserSearch', 'exemptUserId', 'exemptUserMenu');
+            ensureRoleSelector();
+        }
+
+        function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+        function fmtDate(v) { if (!v) return ''; const d = new Date(String(v).includes('Z') ? v : v + 'Z'); return isNaN(d.getTime()) ? esc(v) : d.toLocaleString(); }
+
+        async function api(path, method = 'GET', body = null) {
+            const resolvedGuildId = await ensureGuildId();
+            if (!resolvedGuildId) {
+                throw new Error('Guild ID is required. Please select a server from Dashboard first.');
+            }
+
+            const opts = { method, headers: { 'X-Guild-Id': resolvedGuildId }, credentials: 'include' };
+            if (body) { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(body); }
+            const res = await fetch(appendGuildId(path, resolvedGuildId), opts);
+            if (res.status === 403) {
+                const data = await res.json().catch(() => ({}));
+                if (data.enterprise) { showEnterpriseLock(); throw new Error('enterprise'); }
+            }
+            let data = {};
+            try { data = await res.json(); } catch (_) {}
+            if (!res.ok) throw new Error(data.error || ('Request failed (' + res.status + ')'));
+            return data;
+        }
+
+        function showEnterpriseLock() {
+            document.getElementById('enterpriseLock').classList.remove('hidden');
+            document.getElementById('mainContent').style.opacity = '1';
+        }
+
+        function setMsg(id, text, ok) {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.textContent = text || '';
+            el.className = 'status-msg ' + (ok ? 'ok' : 'err');
+        }
+
+        // Tabs
+        function activateTab(name) {
+            document.querySelectorAll('.msm-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+            document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.dataset.panel === name));
+            if (name === 'audit') loadAudit();
+        }
+        document.getElementById('msmTabs').addEventListener('click', (e) => {
+            const btn = e.target.closest('.msm-tab');
+            if (btn) activateTab(btn.dataset.tab);
+        });
+
+        // Renderers
+        function syncBadges(s) {
+            const b = (on, label) => `<span class="badge ${on ? 'on' : 'off'}">${label}</span>`;
+            return b(s.sync_bans, 'Bans') + ' ' + b(s.sync_kicks, 'Kicks') + ' ' +
+                   b(s.sync_timeouts, 'Timeouts') + ' ' + b(s.sync_warns, 'Warns');
+        }
+
+        function renderOverviewStats(s) {
+            const el = document.getElementById('overviewStats');
+            const linked = s.linkedServers ? s.linkedServers.length : 0;
+            const pendingReview = s.reviewQueue ? s.reviewQueue.length : 0;
+            const watch = s.watchlist ? s.watchlist.length : 0;
+            const mode = s.membership.enforcement_mode === 'auto' ? 'Automatic' : 'Manual';
+            el.innerHTML = `
+                <div class="stat"><div class="k">Linked Servers</div><div class="v">${linked}</div></div>
+                <div class="stat"><div class="k">Awaiting Review</div><div class="v">${pendingReview}</div></div>
+                <div class="stat"><div class="k">Watchlist</div><div class="v">${watch}</div></div>
+                <div class="stat"><div class="k">Your Mode</div><div class="v" style="font-size:16px;">${mode}</div></div>`;
+        }
+
+        function renderHierarchy(h) {
+            const el = document.getElementById('hierChart');
+            if (!h || !h.main) { el.innerHTML = '<p class="muted">No hierarchy available.</p>'; return; }
+            const nodeHtml = (g, isMain) => `
+                <div class="hier-node ${isMain ? 'is-main' : ''}">
+                    <div class="icon">${g.icon ? `<img src="${esc(g.icon)}" alt="">` : '<i class="fas fa-server" style="color:var(--ds-text-muted)"></i>'}</div>
+                    <div class="n-name">${esc(g.name)}</div>
+                    ${isMain ? '<span class="badge main">Main</span>' : (g.present ? '' : '<span class="badge warn">Bot missing</span>')}
+                </div>`;
+            let html = nodeHtml(h.main, true);
+            if (h.children && h.children.length) {
+                html += '<div class="hier-connector"></div>';
+                html += '<div class="hier-children">' +
+                    h.children.map(c => `<div class="hier-child-wrap"><div class="hier-connector"></div>${nodeHtml(c, false)}</div>`).join('') +
+                    '</div>';
+            }
+            el.innerHTML = html;
+        }
+
+        function renderLinkedServers(s) {
+            const el = document.getElementById('linkedServers');
+            el.innerHTML = s.linkedServers.map(g => {
+                const flags = [];
+                if (g.paused_in) flags.push('<span class="badge warn">Paused in</span>');
+                if (g.paused_out) flags.push('<span class="badge warn">Paused out</span>');
+                if (g.enabled === false) flags.push('<span class="badge danger">Disabled</span>');
+                return `
+                <div class="list-item">
+                    <div class="li-main">
+                        <div class="hier-node icon" style="width:36px;height:36px;padding:0;min-width:36px;border:none;background:var(--ds-surface-3);border-radius:8px;overflow:hidden;">
+                            ${g.icon ? `<img src="${esc(g.icon)}" style="width:100%;height:100%;object-fit:cover;">` : '<i class="fas fa-server" style="color:var(--ds-text-muted)"></i>'}
+                        </div>
+                        <div>
+                            <div class="li-title">${esc(g.name)} ${g.role === 'main' ? '<span class="badge main">Main</span>' : ''} ${g.present ? '' : '<span class="badge warn">Bot missing</span>'} ${flags.join(' ')}</div>
+                            <div class="muted">${syncBadges(g)} · <span class="badge ${g.enforcement_mode === 'auto' ? 'warn' : 'off'}">${g.enforcement_mode === 'auto' ? 'Auto' : 'Manual'}</span></div>
+                        </div>
+                    </div>
+                    ${(s.isMain && g.role !== 'main') ? `<button class="ds-btn ds-btn-secondary" onclick="removeMember('${esc(g.id)}')"><i class="fas fa-unlink"></i> Remove</button>` : ''}
+                </div>`; }).join('');
+        }
+
+        function renderPending(s) {
+            const el = document.getElementById('pendingRequests');
+            if (!s.pendingRequests || !s.pendingRequests.length) { el.innerHTML = '<p class="muted">No pending invitations.</p>'; return; }
+            el.innerHTML = '<div class="li-title" style="margin-bottom:8px;">Pending Invitations</div>' +
+                s.pendingRequests.map(r => `
+                <div class="list-item">
+                    <div class="li-main"><i class="fas fa-hourglass-half muted"></i>
+                        <div><div class="li-title">${esc(r.target.name)}</div>
+                        <div class="muted">Sent ${fmtDate(r.created_at)}</div></div></div>
+                    <button class="ds-btn ds-btn-secondary" onclick="cancelRequest(${r.id})"><i class="fas fa-times"></i> Cancel</button>
+                </div>`).join('');
+        }
+
+        function renderReviewQueue(s) {
+            const el = document.getElementById('reviewQueue');
+            const n = s.reviewQueue.length;
+            document.getElementById('reviewCount').textContent = n;
+            document.getElementById('reviewCount').className = 'badge ' + (n ? 'warn' : 'off');
+            const tb = document.getElementById('tabReviewBadge');
+            tb.textContent = n; tb.className = 'tab-badge' + (n ? '' : ' zero');
+            if (!n) { el.innerHTML = '<p class="muted">No actions awaiting review.</p>'; return; }
+            el.innerHTML = s.reviewQueue.map(a => `
+                <div class="list-item">
+                    <div class="li-main"><span class="badge warn">${esc(a.action_type)}</span>
+                        <div><div class="li-title">User ${esc(a.target_user_tag || a.target_user_id)}</div>
+                        <div class="muted">From origin server · ${esc(a.reason || 'No reason')}</div></div></div>
+                    <div class="row">
+                        <button class="ds-btn ds-btn-primary" onclick="reviewAction(${a.id}, true)"><i class="fas fa-check"></i> Apply</button>
+                        <button class="ds-btn ds-btn-secondary" onclick="reviewAction(${a.id}, false)"><i class="fas fa-times"></i> Discard</button>
+                    </div>
+                </div>`).join('');
+        }
+
+        function renderExemptions(s) {
+            const uEl = document.getElementById('exemptUsers');
+            uEl.innerHTML = (s.exemptUsers && s.exemptUsers.length) ? s.exemptUsers.map(u => `
+                <div class="list-item">
+                    <div class="li-main"><i class="fas fa-user-shield muted"></i>
+                        <div><div class="li-title">${esc(u.user_id)}</div>
+                        <div class="muted">${u.guild_id === '*' ? 'Network-wide' : 'This server'}${u.reason ? ' · ' + esc(u.reason) : ''}</div></div></div>
+                    <button class="ds-btn ds-btn-secondary" onclick="removeExemptUser('${esc(u.user_id)}', ${u.guild_id === '*'})"><i class="fas fa-times"></i></button>
+                </div>`).join('') : '<p class="muted">No exempt users.</p>';
+            const rEl = document.getElementById('exemptRoles');
+            rEl.innerHTML = (s.exemptRoles && s.exemptRoles.length) ? s.exemptRoles.map(r => `
+                <div class="list-item">
+                    <div class="li-main"><i class="fas fa-users-gear muted"></i>
+                        <div><div class="li-title">Role ${esc(r.role_id)}</div>
+                        <div class="muted">${r.reason ? esc(r.reason) : 'This server'}</div></div></div>
+                    <button class="ds-btn ds-btn-secondary" onclick="removeExemptRole('${esc(r.role_id)}')"><i class="fas fa-times"></i></button>
+                </div>`).join('') : '<p class="muted">No exempt roles.</p>';
+        }
+
+        function renderRecent(s) {
+            const el = document.getElementById('recentActions');
+            if (!s.recentActions || !s.recentActions.length) { el.innerHTML = '<p class="muted">No actions yet.</p>'; return; }
+            const statusBadge = (st) => {
+                const map = { applied: 'on', posted: 'on', awaiting_review: 'warn', pending_review: 'warn', failed: 'danger', skipped: 'off', denied: 'off', pending: 'off' };
+                return `<span class="badge ${map[st] || 'off'}">${esc(st)}</span>`;
+            };
+            el.innerHTML = '<table class="msm"><thead><tr><th>Action</th><th>Target</th><th>Status</th><th>Detail</th><th>When</th></tr></thead><tbody>' +
+                s.recentActions.map(a => `<tr>
+                    <td>${esc(a.action_type)}</td>
+                    <td>${esc(a.target_user_tag || a.target_user_id)}</td>
+                    <td>${statusBadge(a.status)}</td>
+                    <td class="muted">${esc(a.failure_reason || a.reason || '')}</td>
+                    <td class="muted">${fmtDate(a.created_at)}</td>
+                </tr>`).join('') + '</tbody></table>';
+        }
+
+        function renderAnnouncements(s) {
+            const isMain = s.isMain;
+            document.getElementById('publishCard').classList.toggle('hidden', !isMain);
+            document.getElementById('pendingAnnCard').classList.toggle('hidden', isMain);
+
+            const pendEl = document.getElementById('pendingAnnouncements');
+            const pending = s.pendingAnnouncements || [];
+            const tb = document.getElementById('tabAnnBadge');
+            tb.textContent = pending.length; tb.className = 'tab-badge' + (pending.length ? '' : ' zero');
+            pendEl.innerHTML = pending.length ? pending.map(p => `
+                <div class="list-item">
+                    <div class="li-main"><span class="badge ${p.urgency === 'urgent' ? 'danger' : 'info'}">${esc(p.type)}</span>
+                        <div><div class="li-title">${esc(p.title)}</div>
+                        <div class="muted">${esc((p.body || '').slice(0,140))}</div></div></div>
+                    <div class="row">
+                        <button class="ds-btn ds-btn-primary" onclick="reviewAnnouncement(${p.announcement_id}, true)"><i class="fas fa-check"></i> Post</button>
+                        <button class="ds-btn ds-btn-secondary" onclick="reviewAnnouncement(${p.announcement_id}, false)"><i class="fas fa-times"></i> Skip</button>
+                    </div>
+                </div>`).join('') : '<p class="muted">Nothing awaiting review.</p>';
+
+            const listEl = document.getElementById('announcementList');
+            const items = s.announcements || [];
+            listEl.innerHTML = items.length ? items.map(a => {
+                const meta = isMain
+                    ? `<span class="badge on">${a.postedCount || 0} posted</span> ${a.pendingCount ? `<span class="badge warn">${a.pendingCount} pending</span>` : ''}`
+                    : (a.delivery ? `<span class="badge ${a.delivery.status === 'posted' ? 'on' : (a.delivery.status === 'pending_review' ? 'warn' : 'off')}">${esc(a.delivery.status)}</span>` : '');
+                return `
+                <div class="list-item" style="align-items:flex-start;">
+                    <div class="li-main" style="align-items:flex-start;">
+                        <span class="badge ${a.urgency === 'urgent' ? 'danger' : 'info'}">${esc(a.type)}</span>
+                        <div><div class="li-title">${esc(a.title)}</div>
+                        <div class="muted">${esc((a.body || '').slice(0,180))}</div>
+                        <div class="muted" style="margin-top:4px;">${fmtDate(a.created_at)} · ${esc(a.created_by_tag || '')}</div></div>
+                    </div>
+                    <div>${meta}</div>
+                </div>`; }).join('') : '<p class="muted">No announcements yet.</p>';
+        }
+
+        function renderWatchlist(s) {
+            const el = document.getElementById('watchlistEntries');
+            const items = s.watchlist || [];
+            if (!items.length) { el.innerHTML = '<p class="muted">Watchlist is empty.</p>'; return; }
+            const sevColor = (n) => ['#6b7280','#22c55e','#eab308','#f97316','#ef4444','#dc2626'][Math.min(Math.max(n,0),5)];
+            el.innerHTML = '<table class="msm"><thead><tr><th>User</th><th>Sev</th><th>Reason</th><th>Source</th><th>When</th><th></th></tr></thead><tbody>' +
+                items.map(w => `<tr>
+                    <td style="font-family:JetBrains Mono,monospace;">${esc(w.user_id)}</td>
+                    <td><span class="sev-dot" style="background:${sevColor(w.severity)}"></span>${esc(w.severity)}</td>
+                    <td class="muted">${esc(w.reason || '')}</td>
+                    <td class="muted">${esc(w.source ? w.source.name : w.source_guild_id)}</td>
+                    <td class="muted">${fmtDate(w.created_at)}</td>
+                    <td><button class="ds-btn ds-btn-secondary" onclick="removeWatchlist('${esc(w.user_id)}')"><i class="fas fa-times"></i></button></td>
+                </tr>`).join('') + '</tbody></table>';
+        }
+
+        async function loadAudit() {
+            const el = document.getElementById('auditLog');
+            try {
+                const r = await api('/api/multi-server/audit?limit=100');
+                const entries = r.entries || [];
+                if (!entries.length) { el.innerHTML = '<p class="muted">No audit entries.</p>'; return; }
+                el.innerHTML = '<table class="msm"><thead><tr><th>Event</th><th>Actor</th><th>Target</th><th>Details</th><th>When</th></tr></thead><tbody>' +
+                    entries.map(e => `<tr>
+                        <td><span class="badge off">${esc(e.event_type)}</span></td>
+                        <td class="muted">${esc(e.actor_tag || e.actor_id || 'system')}</td>
+                        <td class="muted">${esc(e.target_user_id || e.target_guild_id || '')}</td>
+                        <td class="muted">${e.details ? esc(JSON.stringify(e.details).slice(0,160)) : ''}</td>
+                        <td class="muted">${fmtDate(e.created_at)}</td>
+                    </tr>`).join('') + '</tbody></table>';
+            } catch (err) {
+                if (err.message === 'enterprise') return;
+                el.innerHTML = `<p class="status-msg err">Failed to load audit log: ${esc(err.message)}</p>`;
+            }
+        }
+
+        function render(s) {
+            STATE = s;
+            document.getElementById('mainContent').style.opacity = '1';
+            if (!s.hasNetwork) {
+                document.getElementById('noNetworkCard').classList.remove('hidden');
+                document.getElementById('networkView').classList.add('hidden');
+                return;
+            }
+            document.getElementById('noNetworkCard').classList.add('hidden');
+            document.getElementById('networkView').classList.remove('hidden');
+            ensureRoleSelector();
+
+            // Main-only vs member-only visibility
+            document.querySelectorAll('.main-only').forEach(el => el.classList.toggle('hidden', !s.isMain));
+
+            document.getElementById('networkTitle').textContent = s.network.name;
+            document.getElementById('networkDesc').textContent = s.network.description || '';
+            const st = s.network.status || (s.network.disabled ? 'disabled' : 'active');
+            const stBadge = st === 'active' ? '<span class="badge on">Active</span>'
+                : (st === 'paused' ? '<span class="badge warn">Paused</span>' : '<span class="badge danger">Disabled</span>');
+            document.getElementById('networkStateBadge').innerHTML = stBadge;
+            const paused = st !== 'active';
+            document.getElementById('panicBanner').classList.toggle('hidden', !paused);
+            document.getElementById('panicBannerReason').textContent = s.network.disabled_reason || 'All cross-server enforcement is halted.';
+
+            renderOverviewStats(s);
+            renderHierarchy(s.hierarchy);
+            renderLinkedServers(s);
+
+            if (s.isMain) {
+                renderPending(s);
+                document.getElementById('netName').value = s.network.name || '';
+                document.getElementById('netDescription').value = s.network.description || '';
+                document.getElementById('netStatus').value = st;
+                document.getElementById('netDefaultMode').value = s.network.default_action_mode || 'review';
+            }
+
+            // Own sync settings
+            document.getElementById('syncBans').checked = s.membership.sync_bans;
+            document.getElementById('syncUnbans').checked = s.membership.sync_unbans;
+            document.getElementById('syncKicks').checked = s.membership.sync_kicks;
+            document.getElementById('syncTimeouts').checked = s.membership.sync_timeouts;
+            document.getElementById('syncWarns').checked = s.membership.sync_warns;
+            document.getElementById('acceptWatchlist').checked = s.membership.accept_watchlist;
+            document.getElementById('enforcementMode').value = s.membership.enforcement_mode;
+
+            // Announcement handling
+            document.getElementById('announceMode').value = s.membership.announce_mode || 'review';
+            document.getElementById('announceMinUrgency').value = s.membership.announce_min_urgency || 'normal';
+            document.getElementById('announceChannelId').value = s.membership.announce_channel_id || '';
+
+            // Server pause
+            document.getElementById('pausedIn').checked = s.membership.paused_in;
+            document.getElementById('pausedOut').checked = s.membership.paused_out;
+
+            // Panic button label
+            const pb = document.getElementById('panicBtn');
+            pb.innerHTML = paused ? '<i class="fas fa-play"></i> Resume Network' : '<i class="fas fa-pause"></i> Pause Network';
+
+            renderReviewQueue(s);
+            renderRecent(s);
+            renderExemptions(s);
+            renderAnnouncements(s);
+            renderWatchlist(s);
+        }
+
+        async function load() {
+            try {
+                await ensureGuildId();
+                const s = await api('/api/multi-server/status');
+                render(s);
+            } catch (err) {
+                if (err.message === 'enterprise') return; // lock already shown
+                document.getElementById('mainContent').style.opacity = '1';
+                document.getElementById('statusBanner').innerHTML =
+                    `<div class="setup-card"><div class="setup-card-body err status-msg">Failed to load: ${esc(err.message)}</div></div>`;
+            }
+        }
+
+        // Actions
+        document.getElementById('createNetworkBtn').addEventListener('click', async () => {
+            const name = document.getElementById('networkName').value.trim();
+            try { await api('/api/multi-server/network', 'POST', { name }); setMsg('createMsg', 'Network created!', true); load(); }
+            catch (err) { setMsg('createMsg', err.message, false); }
+        });
+
+        document.getElementById('saveNetworkBtn').addEventListener('click', async () => {
+            const body = {
+                name: document.getElementById('netName').value.trim(),
+                description: document.getElementById('netDescription').value.trim(),
+                status: document.getElementById('netStatus').value,
+                default_action_mode: document.getElementById('netDefaultMode').value
+            };
+            try { await api('/api/multi-server/network-settings', 'POST', body); setMsg('netSettingsMsg', 'Network settings saved.', true); load(); }
+            catch (err) { setMsg('netSettingsMsg', err.message, false); }
+        });
+
+        document.getElementById('sendInviteBtn').addEventListener('click', async () => {
+            const targetGuildId = document.getElementById('targetGuildId').value.trim();
+            try {
+                const r = await api('/api/multi-server/link-request', 'POST', { targetGuildId });
+                setMsg('inviteMsg', 'Invitation sent (' + (r.via || 'delivered') + '). Waiting for the other server to approve.', true);
+                document.getElementById('targetGuildId').value = '';
+                load();
+            } catch (err) { setMsg('inviteMsg', err.message, false); }
+        });
+
+        window.cancelRequest = async (id) => {
+            try { await api('/api/multi-server/link-cancel', 'POST', { requestId: id }); load(); } catch (err) { alert(err.message); }
+        };
+        window.removeMember = async (gid) => {
+            if (!confirm('Remove this server from the network?')) return;
+            try { await api('/api/multi-server/remove-member', 'POST', { guildId: gid }); load(); } catch (err) { alert(err.message); }
+        };
+
+        document.getElementById('saveSyncBtn').addEventListener('click', async () => {
+            const body = {
+                sync_bans: document.getElementById('syncBans').checked,
+                sync_unbans: document.getElementById('syncUnbans').checked,
+                sync_kicks: document.getElementById('syncKicks').checked,
+                sync_timeouts: document.getElementById('syncTimeouts').checked,
+                sync_warns: document.getElementById('syncWarns').checked,
+                accept_watchlist: document.getElementById('acceptWatchlist').checked,
+                enforcement_mode: document.getElementById('enforcementMode').value
+            };
+            try { await api('/api/multi-server/sync-settings', 'POST', body); setMsg('syncMsg', 'Settings saved.', true); load(); }
+            catch (err) { setMsg('syncMsg', err.message, false); }
+        });
+
+        document.getElementById('saveAnnounceBtn').addEventListener('click', async () => {
+            const body = {
+                announce_mode: document.getElementById('announceMode').value,
+                announce_min_urgency: document.getElementById('announceMinUrgency').value,
+                announce_channel_id: document.getElementById('announceChannelId').value.trim()
+            };
+            try { await api('/api/multi-server/sync-settings', 'POST', body); setMsg('announceSettingsMsg', 'Announcement settings saved.', true); load(); }
+            catch (err) { setMsg('announceSettingsMsg', err.message, false); }
+        });
+
+        document.getElementById('saveServerPauseBtn').addEventListener('click', async () => {
+            const body = {
+                paused_in: document.getElementById('pausedIn').checked,
+                paused_out: document.getElementById('pausedOut').checked
+            };
+            try { await api('/api/multi-server/server-pause', 'POST', body); setMsg('serverPauseMsg', 'Pause state saved.', true); load(); }
+            catch (err) { setMsg('serverPauseMsg', err.message, false); }
+        });
+
+        window.reviewAction = async (id, approve) => {
+            try { await api('/api/multi-server/review/' + (approve ? 'approve' : 'deny'), 'POST', { actionId: id }); load(); }
+            catch (err) { alert(err.message); }
+        };
+
+        document.getElementById('publishAnnBtn').addEventListener('click', async () => {
+            const body = {
+                type: document.getElementById('annType').value,
+                urgency: document.getElementById('annUrgency').value,
+                title: document.getElementById('annTitle').value.trim(),
+                body: document.getElementById('annBody').value.trim()
+            };
+            try {
+                await api('/api/multi-server/announcements', 'POST', body);
+                setMsg('publishMsg', 'Announcement published to the network.', true);
+                document.getElementById('annTitle').value = '';
+                document.getElementById('annBody').value = '';
+                load();
+            } catch (err) { setMsg('publishMsg', err.message, false); }
+        });
+
+        window.reviewAnnouncement = async (id, approve) => {
+            try { await api('/api/multi-server/announcements/' + (approve ? 'approve' : 'deny'), 'POST', { announcementId: id }); load(); }
+            catch (err) { alert(err.message); }
+        };
+
+        document.getElementById('addWatchlistBtn').addEventListener('click', async () => {
+            const userId = document.getElementById('wlUserId').value.trim() || document.getElementById('wlUserSearch').value.trim();
+            const body = {
+                userId,
+                severity: document.getElementById('wlSeverity').value,
+                reason: document.getElementById('wlReason').value.trim(),
+                evidence: document.getElementById('wlEvidence').value.trim()
+            };
+            try {
+                await api('/api/multi-server/watchlist', 'POST', body);
+                setMsg('watchlistMsg', 'Added to the shared watchlist.', true);
+                clearUserSelector('wlUserSearch', 'wlUserId', 'wlUserMenu');
+                document.getElementById('wlReason').value = '';
+                document.getElementById('wlEvidence').value = '';
+                load();
+            } catch (err) { setMsg('watchlistMsg', err.message, false); }
+        });
+        window.removeWatchlist = async (userId) => {
+            if (!confirm('Remove this user from the shared watchlist?')) return;
+            try { await api('/api/multi-server/watchlist', 'DELETE', { userId }); load(); } catch (err) { alert(err.message); }
+        };
+
+        document.getElementById('addExemptUserBtn').addEventListener('click', async () => {
+            const userId = document.getElementById('exemptUserId').value.trim() || document.getElementById('exemptUserSearch').value.trim();
+            const networkWide = document.getElementById('exemptNetworkWide').checked;
+            try {
+                await api('/api/multi-server/exempt-user', 'POST', { userId, networkWide });
+                clearUserSelector('exemptUserSearch', 'exemptUserId', 'exemptUserMenu');
+                load();
+            }
+            catch (err) { alert(err.message); }
+        });
+        window.removeExemptUser = async (userId, networkWide) => {
+            try { await api('/api/multi-server/exempt-user', 'DELETE', { userId, networkWide }); load(); } catch (err) { alert(err.message); }
+        };
+        document.getElementById('addExemptRoleBtn').addEventListener('click', async () => {
+            const roleId = document.getElementById('exemptRoleId').value.trim();
+            try { await api('/api/multi-server/exempt-role', 'POST', { roleId }); document.getElementById('exemptRoleId').value = ''; load(); }
+            catch (err) { alert(err.message); }
+        });
+        window.removeExemptRole = async (roleId) => {
+            try { await api('/api/multi-server/exempt-role', 'DELETE', { roleId }); load(); } catch (err) { alert(err.message); }
+        };
+
+        document.getElementById('refreshAuditBtn').addEventListener('click', loadAudit);
+
+        document.getElementById('panicBtn').addEventListener('click', async () => {
+            const cur = STATE && STATE.network ? (STATE.network.status ? STATE.network.status !== 'active' : STATE.network.disabled) : false;
+            const disabled = !cur;
+            try { await api('/api/multi-server/panic', 'POST', { disabled, reason: disabled ? 'Paused from dashboard' : null }); load(); }
+            catch (err) { setMsg('dangerMsg', err.message, false); }
+        });
+        document.getElementById('deleteNetworkBtn').addEventListener('click', async () => {
+            if (!confirm('Permanently dissolve this network and unlink all servers? This cannot be undone.')) return;
+            try { await api('/api/multi-server/network', 'DELETE'); setMsg('dangerMsg', 'Network dissolved.', true); load(); }
+            catch (err) { setMsg('dangerMsg', err.message, false); }
+        });
+
+        initSelectors();
+        load();
+    </script>
+</body>
+</html>

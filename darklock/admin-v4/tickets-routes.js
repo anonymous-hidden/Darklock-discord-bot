@@ -22,34 +22,248 @@ const router   = express.Router();
 
 // ── Lazy bot-DB singleton ────────────────────────────────────────────────────────
 let _botDb = null;
+let _botDbPromise = null;
+let _botDbPath = null;
 let _ticketTableInfo = null;
+const _tableExistsCache = new Map();
+const _tableColumnsCache = new Map();
 
-function getBotDb() {
-    if (_botDb) return _botDb;
+function unique(arr) {
+    return [...new Set(arr.filter(Boolean))];
+}
 
-    const dataDir = process.env.DB_PATH || './data';
-    const dbName  = process.env.DB_NAME  || 'security_bot.db';
-    const dbPath  = path.resolve(dataDir, dbName);
-
-    if (!fs.existsSync(dbPath)) {
-        throw new Error(`Bot database not found at: ${dbPath}`);
+function fileExists(p) {
+    try {
+        return !!p && fs.existsSync(p);
+    } catch {
+        return false;
     }
+}
 
+function getDbCandidates() {
+    const envDir = process.env.DB_PATH || process.env.DATA_PATH;
+    const envName = process.env.DB_NAME || 'security_bot.db';
+
+    return unique([
+        process.env.SECURITY_BOT_DB_PATH,
+        process.env.BOT_DB_PATH,
+        envDir ? path.resolve(envDir, envName) : null,
+        path.resolve(process.cwd(), 'data', 'security_bot.db'),
+        path.resolve(__dirname, '..', 'data', 'security_bot.db'),
+        path.resolve(__dirname, '..', '..', 'data', 'security_bot.db'),
+        path.resolve(__dirname, '..', '..', '..', 'data', 'security_bot.db'),
+    ]);
+}
+
+function openSqlite(dbPath) {
     return new Promise((resolve, reject) => {
         const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READWRITE, (err) => {
             if (err) return reject(err);
+
             db.run('PRAGMA journal_mode=WAL');
             db.run('PRAGMA foreign_keys=ON');
 
-            // Promisify helpers
             db.getP  = (sql, p) => new Promise((res, rej) => db.get(sql,  p || [], (e, r)  => e ? rej(e) : res(r)));
             db.allP  = (sql, p) => new Promise((res, rej) => db.all(sql,  p || [], (e, r)  => e ? rej(e) : res(r)));
             db.runP  = (sql, p) => new Promise((res, rej) => db.run(sql,  p || [], function(e) { e ? rej(e) : res(this); }));
 
-            _botDb = db;
             resolve(db);
         });
     });
+}
+
+async function closeSqlite(db) {
+    return new Promise((resolve) => {
+        try {
+            db.close(() => resolve());
+        } catch {
+            resolve();
+        }
+    });
+}
+
+async function tableExists(db, tableName) {
+    const key = `${_botDbPath || 'db'}::${tableName}`;
+    if (_tableExistsCache.has(key)) return _tableExistsCache.get(key);
+
+    const row = await db.getP(
+        `SELECT 1 as ok FROM sqlite_master WHERE type='table' AND name = ? LIMIT 1`,
+        [tableName]
+    );
+    const exists = !!row;
+    _tableExistsCache.set(key, exists);
+    return exists;
+}
+
+async function getTableColumns(db, tableName) {
+    const key = `${_botDbPath || 'db'}::cols::${tableName}`;
+    if (_tableColumnsCache.has(key)) return _tableColumnsCache.get(key);
+
+    const rows = await db.allP(`PRAGMA table_info(${tableName})`);
+    const cols = new Set((rows || []).map(r => r.name));
+    _tableColumnsCache.set(key, cols);
+    return cols;
+}
+
+function pickColumnExpr(columns, candidates, alias, fallbackSql = 'NULL') {
+    for (const col of candidates) {
+        if (columns.has(col)) {
+            return col === alias ? col : `${col} as ${alias}`;
+        }
+    }
+    return `${fallbackSql} as ${alias}`;
+}
+
+async function ensureTicketSupportTables(db) {
+    await db.runP(`
+        CREATE TABLE IF NOT EXISTS ticket_notes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            channel_id TEXT,
+            guild_id TEXT,
+            content TEXT,
+            added_by_id TEXT,
+            added_by_tag TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+    `);
+
+    await db.runP(`
+        CREATE TABLE IF NOT EXISTS ticket_messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ticket_id TEXT,
+            user_id TEXT,
+            content TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+    `);
+
+    await db.runP(`
+        CREATE TABLE IF NOT EXISTS ticket_transcripts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            channel_id TEXT,
+            content TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+    `);
+
+    await db.runP(`
+        CREATE TABLE IF NOT EXISTS help_ticket_messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ticket_id TEXT NOT NULL,
+            message_id TEXT,
+            user_id TEXT NOT NULL,
+            content TEXT NOT NULL,
+            is_admin INTEGER DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+    `);
+
+    await db.runP(`
+        CREATE TABLE IF NOT EXISTS ticket_blacklist (
+            guild_id TEXT NOT NULL,
+            user_id TEXT NOT NULL,
+            reason TEXT,
+            added_by TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            PRIMARY KEY (guild_id, user_id)
+        )
+    `);
+
+    await db.runP(`
+        CREATE TABLE IF NOT EXISTS ticket_settings (
+            guild_id TEXT PRIMARY KEY,
+            enabled INTEGER NOT NULL DEFAULT 1,
+            category_id TEXT,
+            support_role_id TEXT,
+            log_channel_id TEXT,
+            ticket_limit INTEGER DEFAULT 1,
+            auto_close_hours INTEGER,
+            transcript_channel_id TEXT,
+            welcome_message TEXT,
+            close_confirmation TEXT,
+            severity_enabled INTEGER DEFAULT 0,
+            default_severity TEXT,
+            require_reason INTEGER DEFAULT 0,
+            require_severity INTEGER DEFAULT 0,
+            allow_user_close INTEGER DEFAULT 1,
+            dm_on_update INTEGER DEFAULT 0,
+            dm_on_close INTEGER DEFAULT 0,
+            panel_title TEXT,
+            panel_description TEXT,
+            panel_footer TEXT,
+            custom_embed_color TEXT,
+            custom_open_emoji TEXT,
+            custom_close_emoji TEXT,
+            updated_at TEXT
+        )
+    `);
+}
+
+async function dbHasTicketTables(db) {
+    const row = await db.getP(`
+        SELECT COUNT(*) as cnt
+        FROM sqlite_master
+        WHERE type = 'table' AND name IN ('tickets', 'help_tickets')
+    `);
+    return Number(row?.cnt || 0) > 0;
+}
+
+async function getBotDb() {
+    if (_botDb) return _botDb;
+    if (_botDbPromise) return _botDbPromise;
+
+    _botDbPromise = (async () => {
+        const candidates = getDbCandidates();
+        const existing = candidates.filter(fileExists);
+        if (!existing.length) {
+            throw new Error(`Bot database not found. Tried: ${candidates.join(', ')}`);
+        }
+
+        let fallbackDb = null;
+        let fallbackPath = null;
+
+        for (const dbPath of existing) {
+            let db = null;
+            try {
+                db = await openSqlite(dbPath);
+                const hasTicketTables = await dbHasTicketTables(db);
+                if (hasTicketTables) {
+                    const selectedDb = db;
+                    db = null;
+                    _botDbPath = dbPath;
+                    await ensureTicketSupportTables(selectedDb);
+                    console.log(`[Admin Tickets] Using bot DB: ${dbPath}`);
+                    return selectedDb;
+                }
+
+                if (!fallbackDb) {
+                    fallbackDb = db;
+                    fallbackPath = dbPath;
+                    db = null;
+                }
+            } catch {
+                // Ignore invalid candidate DB files and continue searching.
+            } finally {
+                if (db) await closeSqlite(db);
+            }
+        }
+
+        if (fallbackDb) {
+            _botDbPath = fallbackPath;
+            await ensureTicketSupportTables(fallbackDb);
+            console.warn(`[Admin Tickets] No ticket tables found; falling back to DB: ${fallbackPath}`);
+            return fallbackDb;
+        }
+
+        throw new Error(`Unable to open any candidate bot database. Tried: ${existing.join(', ')}`);
+    })();
+
+    try {
+        _botDb = await _botDbPromise;
+        return _botDb;
+    } finally {
+        _botDbPromise = null;
+    }
 }
 
 async function getTicketTableInfo(db) {
@@ -330,6 +544,8 @@ router.get('/', async (req, res) => {
 
         const classicWhere = classicConditions.join(' AND ');
         const helpWhere = helpConditions.join(' AND ');
+        const ticketsCols = tableInfo.hasTickets ? await getTableColumns(db, 'tickets') : new Set();
+        const helpCols = tableInfo.hasHelpTickets ? await getTableColumns(db, 'help_tickets') : new Set();
 
         const countPromises = [];
         if (tableInfo.hasTickets) {
@@ -345,45 +561,73 @@ router.get('/', async (req, res) => {
 
         const [classicCount, helpCount] = await Promise.all(countPromises);
 
+        const classicSelect = [
+            `'tickets' as source`,
+            pickColumnExpr(ticketsCols, ['id', 'ticket_id'], 'id', `CAST(rowid AS TEXT)`),
+            pickColumnExpr(ticketsCols, ['guild_id'], 'guild_id'),
+            pickColumnExpr(ticketsCols, ['ticket_id'], 'ticket_id'),
+            pickColumnExpr(ticketsCols, ['user_id'], 'user_id'),
+            pickColumnExpr(ticketsCols, ['user_tag', 'user_id'], 'user_tag'),
+            pickColumnExpr(ticketsCols, ['channel_id'], 'channel_id'),
+            pickColumnExpr(ticketsCols, ['assigned_to'], 'assigned_to'),
+            pickColumnExpr(ticketsCols, ['assigned_to_name'], 'assigned_to_name'),
+            pickColumnExpr(ticketsCols, ['status'], 'status', `'open'`),
+            pickColumnExpr(ticketsCols, ['priority'], 'priority', `'normal'`),
+            pickColumnExpr(ticketsCols, ['category'], 'category'),
+            pickColumnExpr(ticketsCols, ['subject'], 'subject'),
+            pickColumnExpr(ticketsCols, ['description'], 'description'),
+            pickColumnExpr(ticketsCols, ['tags', 'tag'], 'tags'),
+            pickColumnExpr(ticketsCols, ['severity'], 'severity'),
+            pickColumnExpr(ticketsCols, ['created_at'], 'created_at', `datetime('now')`),
+            pickColumnExpr(ticketsCols, ['updated_at', 'last_message_at', 'created_at'], 'updated_at', `datetime('now')`),
+            pickColumnExpr(ticketsCols, ['closed_at'], 'closed_at'),
+            pickColumnExpr(ticketsCols, ['close_reason', 'response'], 'close_reason'),
+            pickColumnExpr(ticketsCols, ['escalated'], 'escalated', '0'),
+            pickColumnExpr(ticketsCols, ['locked'], 'locked', '0'),
+            pickColumnExpr(ticketsCols, ['total_messages'], 'total_messages', 'NULL'),
+            pickColumnExpr(ticketsCols, ['sla_breached'], 'sla_breached', '0'),
+        ].join(',\n                        ');
+
+        const helpSelect = [
+            `'help_tickets' as source`,
+            pickColumnExpr(helpCols, ['id', 'ticket_id'], 'id', `CAST(rowid AS TEXT)`),
+            pickColumnExpr(helpCols, ['guild_id'], 'guild_id'),
+            pickColumnExpr(helpCols, ['ticket_id'], 'ticket_id'),
+            pickColumnExpr(helpCols, ['user_id'], 'user_id'),
+            pickColumnExpr(helpCols, ['user_tag', 'user_id'], 'user_tag'),
+            `NULL as channel_id`,
+            pickColumnExpr(helpCols, ['assigned_to'], 'assigned_to'),
+            `NULL as assigned_to_name`,
+            `CASE WHEN status = 'in_progress' THEN 'claimed' ELSE status END as status`,
+            pickColumnExpr(helpCols, ['priority'], 'priority', `'normal'`),
+            pickColumnExpr(helpCols, ['category'], 'category'),
+            pickColumnExpr(helpCols, ['subject'], 'subject'),
+            pickColumnExpr(helpCols, ['description'], 'description'),
+            `NULL as tags`,
+            `NULL as severity`,
+            pickColumnExpr(helpCols, ['created_at'], 'created_at', `datetime('now')`),
+            pickColumnExpr(helpCols, ['updated_at', 'created_at'], 'updated_at', `datetime('now')`),
+            pickColumnExpr(helpCols, ['resolved_at', 'closed_at'], 'closed_at'),
+            pickColumnExpr(helpCols, ['response', 'close_reason'], 'close_reason'),
+            `0 as escalated`,
+            `0 as locked`,
+            `NULL as total_messages`,
+            `0 as sla_breached`,
+        ].join(',\n                        ');
+
         let rows = [];
         if (tableInfo.hasTickets && tableInfo.hasHelpTickets) {
             rows = await db.allP(
                 `SELECT * FROM (
                     SELECT
-                        'tickets' as source,
-                        CAST(id AS TEXT) as id,
-                        guild_id, ticket_id, user_id, user_tag, channel_id,
-                        assigned_to, assigned_to_name,
-                        status,
-                        priority, category, subject, description, tags, severity,
-                        created_at, updated_at,
-                        closed_at,
-                        close_reason,
-                        escalated, locked, total_messages, sla_breached
+                        ${classicSelect}
                     FROM tickets
                     WHERE ${classicWhere}
 
                     UNION ALL
 
                     SELECT
-                        'help_tickets' as source,
-                        CAST(id AS TEXT) as id,
-                        guild_id, ticket_id, user_id,
-                        user_id as user_tag,
-                        NULL as channel_id,
-                        assigned_to,
-                        NULL as assigned_to_name,
-                        CASE WHEN status = 'in_progress' THEN 'claimed' ELSE status END as status,
-                        priority, category, subject, description,
-                        NULL as tags,
-                        NULL as severity,
-                        created_at, updated_at,
-                        resolved_at as closed_at,
-                        response as close_reason,
-                        0 as escalated,
-                        0 as locked,
-                        NULL as total_messages,
-                        0 as sla_breached
+                        ${helpSelect}
                     FROM help_tickets
                     WHERE ${helpWhere}
                 ) combined
@@ -394,16 +638,7 @@ router.get('/', async (req, res) => {
         } else if (tableInfo.hasTickets) {
             rows = await db.allP(
                 `SELECT
-                    'tickets' as source,
-                    CAST(id AS TEXT) as id,
-                    guild_id, ticket_id, user_id, user_tag, channel_id,
-                    assigned_to, assigned_to_name,
-                    status,
-                    priority, category, subject, description, tags, severity,
-                    created_at, updated_at,
-                    closed_at,
-                    close_reason,
-                    escalated, locked, total_messages, sla_breached
+                    ${classicSelect}
                  FROM tickets
                  WHERE ${classicWhere}
                  ORDER BY ${sort} ${order}
@@ -413,24 +648,7 @@ router.get('/', async (req, res) => {
         } else {
             rows = await db.allP(
                 `SELECT
-                    'help_tickets' as source,
-                    CAST(id AS TEXT) as id,
-                    guild_id, ticket_id, user_id,
-                    user_id as user_tag,
-                    NULL as channel_id,
-                    assigned_to,
-                    NULL as assigned_to_name,
-                    CASE WHEN status = 'in_progress' THEN 'claimed' ELSE status END as status,
-                    priority, category, subject, description,
-                    NULL as tags,
-                    NULL as severity,
-                    created_at, updated_at,
-                    resolved_at as closed_at,
-                    response as close_reason,
-                    0 as escalated,
-                    0 as locked,
-                    NULL as total_messages,
-                    0 as sla_breached
+                    ${helpSelect}
                  FROM help_tickets
                  WHERE ${helpWhere}
                  ORDER BY ${sort} ${order}
@@ -466,53 +684,110 @@ router.get('/:id', async (req, res) => {
         let transcript = null;
 
         if (ticket.source === 'tickets') {
-            notes = await db.allP(
-                `SELECT * FROM ticket_notes WHERE channel_id = ? ORDER BY created_at ASC`,
-                [ticket.channel_id]
-            );
+            if (await tableExists(db, 'ticket_notes')) {
+                const noteCols = await getTableColumns(db, 'ticket_notes');
+                const noteRefCol = noteCols.has('channel_id')
+                    ? 'channel_id'
+                    : (noteCols.has('ticket_id') ? 'ticket_id' : null);
+                const noteRefVal = noteRefCol === 'ticket_id'
+                    ? (ticket.ticket_id || ticket.channel_id)
+                    : ticket.channel_id;
+                const noteOrder = noteCols.has('created_at') ? 'created_at' : 'rowid';
 
-            messages = await db.allP(
-                `SELECT * FROM ticket_messages WHERE ticket_id = ? ORDER BY created_at ASC LIMIT 200`,
-                [ticket.ticket_id || ticket.channel_id]
-            );
+                notes = await db.allP(
+                    noteRefCol
+                        ? `SELECT * FROM ticket_notes WHERE ${noteRefCol} = ? ORDER BY ${noteOrder} ASC`
+                        : `SELECT * FROM ticket_notes ORDER BY ${noteOrder} ASC LIMIT 100`,
+                    noteRefCol ? [noteRefVal] : []
+                );
+            }
 
-            transcript = await db.getP(
-                `SELECT content, created_at FROM ticket_transcripts WHERE channel_id = ? ORDER BY created_at DESC LIMIT 1`,
-                [ticket.channel_id]
-            );
+            if (await tableExists(db, 'ticket_messages')) {
+                const msgCols = await getTableColumns(db, 'ticket_messages');
+                const msgRefCol = msgCols.has('ticket_id')
+                    ? 'ticket_id'
+                    : (msgCols.has('channel_id') ? 'channel_id' : null);
+                const msgRefVal = msgRefCol === 'channel_id'
+                    ? (ticket.channel_id || ticket.ticket_id)
+                    : (ticket.ticket_id || ticket.channel_id);
+                const msgOrder = msgCols.has('created_at') ? 'created_at' : 'rowid';
+
+                messages = await db.allP(
+                    msgRefCol
+                        ? `SELECT * FROM ticket_messages WHERE ${msgRefCol} = ? ORDER BY ${msgOrder} ASC LIMIT 200`
+                        : `SELECT * FROM ticket_messages ORDER BY ${msgOrder} ASC LIMIT 200`,
+                    msgRefCol ? [msgRefVal] : []
+                );
+            }
+
+            if (await tableExists(db, 'ticket_transcripts')) {
+                const txCols = await getTableColumns(db, 'ticket_transcripts');
+                const txRefCol = txCols.has('channel_id')
+                    ? 'channel_id'
+                    : (txCols.has('ticket_id') ? 'ticket_id' : null);
+                const txRefVal = txRefCol === 'ticket_id'
+                    ? (ticket.ticket_id || ticket.channel_id)
+                    : ticket.channel_id;
+                const txOrder = txCols.has('created_at')
+                    ? 'created_at'
+                    : (txCols.has('updated_at') ? 'updated_at' : 'rowid');
+
+                const transcriptRow = await db.getP(
+                    txRefCol
+                        ? `SELECT * FROM ticket_transcripts WHERE ${txRefCol} = ? ORDER BY ${txOrder} DESC LIMIT 1`
+                        : `SELECT * FROM ticket_transcripts ORDER BY ${txOrder} DESC LIMIT 1`,
+                    txRefCol ? [txRefVal] : []
+                );
+                if (transcriptRow) {
+                    transcript = {
+                        content:
+                            transcriptRow.content ??
+                            transcriptRow.transcript ??
+                            transcriptRow.transcript_content ??
+                            transcriptRow.text ??
+                            null,
+                        created_at:
+                            transcriptRow.created_at ??
+                            transcriptRow.updated_at ??
+                            null,
+                    };
+                }
+            }
         } else {
-            notes = await db.allP(
-                `
-                SELECT
-                    id,
-                    ticket_id,
-                    user_id as added_by_id,
-                    user_id as added_by_tag,
-                    REPLACE(content, '[INTERNAL NOTE] ', '') as content,
-                    created_at
-                FROM help_ticket_messages
-                WHERE ticket_id = ? AND is_admin = 2
-                ORDER BY created_at ASC
-                `,
-                [ticket.ticket_id]
-            );
+            if (await tableExists(db, 'help_ticket_messages')) {
+                notes = await db.allP(
+                    `
+                    SELECT
+                        id,
+                        ticket_id,
+                        user_id as added_by_id,
+                        user_id as added_by_tag,
+                        REPLACE(content, '[INTERNAL NOTE] ', '') as content,
+                        created_at
+                    FROM help_ticket_messages
+                    WHERE ticket_id = ? AND is_admin = 2
+                    ORDER BY created_at ASC
+                    `,
+                    [ticket.ticket_id]
+                );
 
-            messages = await db.allP(
-                `
-                SELECT
-                    id,
-                    ticket_id,
-                    user_id,
-                    content,
-                    is_admin,
-                    created_at
-                FROM help_ticket_messages
-                WHERE ticket_id = ?
-                ORDER BY created_at ASC
-                LIMIT 200
-                `,
-                [ticket.ticket_id]
-            );
+                messages = await db.allP(
+                    `
+                    SELECT
+                        id,
+                        ticket_id,
+                        user_id,
+                        content,
+                        is_admin,
+                        created_at
+                    FROM help_ticket_messages
+                    WHERE ticket_id = ?
+                    ORDER BY created_at ASC
+                    LIMIT 200
+                    `,
+                    [ticket.ticket_id]
+                );
+            }
         }
 
         res.json({ success: true, ticket, notes: notes || [], messages: messages || [], transcript });
@@ -542,16 +817,37 @@ router.put('/:id/status', async (req, res) => {
         const closeReason = reason || null;
 
         if (ticket.source === 'tickets') {
-            await db.runP(
-                `UPDATE tickets
-                 SET status = ?, close_reason = ?, closed_at = ?,
-                     updated_at = ?
-                 WHERE id = ?`,
-                [status, closeReason, closedAt, now, req.params.id]
-            );
+            const ticketCols = await getTableColumns(db, 'tickets');
+            const setClauses = [];
+            const params = [];
+
+            if (ticketCols.has('status')) {
+                setClauses.push('status = ?');
+                params.push(status);
+            }
+            if (ticketCols.has('close_reason')) {
+                setClauses.push('close_reason = ?');
+                params.push(closeReason);
+            }
+            if (ticketCols.has('closed_at')) {
+                setClauses.push('closed_at = ?');
+                params.push(closedAt);
+            }
+            if (ticketCols.has('updated_at')) {
+                setClauses.push('updated_at = ?');
+                params.push(now);
+            }
+
+            if (!setClauses.length) {
+                return res.status(500).json({ success: false, error: 'tickets table has no updatable status fields' });
+            }
+
+            const idColumn = ticketCols.has('id') ? 'id' : (ticketCols.has('ticket_id') ? 'ticket_id' : 'id');
+            params.push(req.params.id);
+            await db.runP(`UPDATE tickets SET ${setClauses.join(', ')} WHERE ${idColumn} = ?`, params);
 
             // Mirror to active_tickets
-            if (status === 'closed' || status === 'resolved') {
+            if ((status === 'closed' || status === 'resolved') && (await tableExists(db, 'active_tickets'))) {
                 await db.runP(
                     `UPDATE active_tickets SET status = ?, updated_at = ? WHERE channel_id = (SELECT channel_id FROM tickets WHERE id = ?)`,
                     [status, now, req.params.id]
@@ -590,10 +886,26 @@ router.put('/:id/priority', async (req, res) => {
         if (!ticket) return res.status(404).json({ success: false, error: 'Ticket not found' });
 
         if (ticket.source === 'tickets') {
-            await db.runP(
-                `UPDATE tickets SET priority = ?, updated_at = ? WHERE id = ?`,
-                [priority, new Date().toISOString(), req.params.id]
-            );
+            const ticketCols = await getTableColumns(db, 'tickets');
+            const setClauses = [];
+            const params = [];
+
+            if (ticketCols.has('priority')) {
+                setClauses.push('priority = ?');
+                params.push(priority);
+            }
+            if (ticketCols.has('updated_at')) {
+                setClauses.push('updated_at = ?');
+                params.push(new Date().toISOString());
+            }
+
+            if (!setClauses.length) {
+                return res.status(500).json({ success: false, error: 'tickets table has no updatable priority fields' });
+            }
+
+            const idColumn = ticketCols.has('id') ? 'id' : (ticketCols.has('ticket_id') ? 'ticket_id' : 'id');
+            params.push(req.params.id);
+            await db.runP(`UPDATE tickets SET ${setClauses.join(', ')} WHERE ${idColumn} = ?`, params);
         } else {
             await db.runP(
                 `UPDATE help_tickets SET priority = ?, updated_at = ? WHERE id = ?`,

@@ -3,7 +3,7 @@
 
 <head>
 
-    <style>html,body{background:#0a0a0f!important;color-scheme:dark}</style>
+    <style>html,body{background:#000!important;color-scheme:dark}</style>
     <meta name="color-scheme" content="dark">
     <!--dl-pt-boot-->
     <script>
@@ -331,7 +331,7 @@ class WidgetSystem {
     <script src="/js/premium-gating.js"></script>
 </head>
 
-<body>
+<body class="solid-black-theme">
     <!-- Animated Background -->
     <div class="bg-animation">
         <div class="orb orb-1"></div>
@@ -422,6 +422,10 @@ class WidgetSystem {
                     <a href="/setup/moderation" class="nav-item">
                         <i class="fas fa-gavel"></i>
                         <span>Moderation</span>
+                    </a>
+                    <a href="/setup/multi-server" class="nav-item" data-enterprise-required="true">
+                        <i class="fas fa-network-wired"></i>
+                        <span>Multi-Server</span>
                     </a>
                 </div>
 
@@ -536,7 +540,7 @@ class WidgetSystem {
                     <button class="btn btn-ghost" id="menuToggle" onclick="toggleSidebar()">
                         <i class="fas fa-bars"></i>
                     </button>
-                    <h1 class="dl-gradient-text">Security Dashboard</h1>
+                    <h1 class="dl-gradient-text">Security Dashboard <span id="server-plan-badge" class="server-plan-badge" style="display:none;margin-left:8px"></span></h1>
                 </div>
 
                 <div class="header-actions">
@@ -579,7 +583,22 @@ class WidgetSystem {
         let charts = {};
         let serverDropdownOpen = false;
         let currentUserRole = 'viewer'; // Default role
+        let currentFeaturePermissions = {};
         let debugMode = false; // Debug mode from admin settings
+
+        function normalizeDashboardRole(rawRole) {
+            const role = String(rawRole || '').trim().toLowerCase();
+            if (role === 'administration' || role === 'admin' || role === 'owner' || role === 'super_admin') return 'administration';
+            if (role === 'moderation' || role === 'moderator' || role === 'mod') return 'moderation';
+            return 'viewer';
+        }
+
+        function hasFeaturePermission(name, fallback = false) {
+            if (Object.prototype.hasOwnProperty.call(currentFeaturePermissions, name)) {
+                return !!currentFeaturePermissions[name];
+            }
+            return fallback;
+        }
 
         // Fetch debug mode setting from admin panel
         async function fetchDebugMode() {
@@ -596,15 +615,15 @@ class WidgetSystem {
 
         // Role-based access control helpers
         function canModifySettings() {
-            return currentUserRole === 'admin' || currentUserRole === 'super_admin' || currentUserRole === 'owner';
+            return hasFeaturePermission('customize', currentUserRole === 'administration');
         }
 
         function canModerate() {
-            return ['moderator', 'admin', 'super_admin', 'owner'].includes(currentUserRole);
+            return hasFeaturePermission('tickets', currentUserRole === 'moderation' || currentUserRole === 'administration');
         }
 
         function canManageUsers() {
-            return currentUserRole === 'super_admin' || currentUserRole === 'owner';
+            return currentUserRole === 'administration';
         }
 
         // Apply role-based visibility to UI elements
@@ -632,6 +651,66 @@ class WidgetSystem {
                 debugLog('Dashboard loaded in read-only mode (viewer role)');
             }
         }
+
+        // Server plan badge updater
+        function humanizePlanTag(tag) {
+            if (!tag) return 'Free';
+            const t = String(tag).toLowerCase();
+            if (t === 'pro' || t === 'professional') return 'Pro';
+            if (t === 'enterprise' || t === 'ent') return 'Enterprise';
+            if (t === 'free' || t === 'starter') return 'Free';
+            return tag.charAt(0).toUpperCase() + tag.slice(1);
+        }
+
+        function updateServerPlanBadge(server) {
+            try {
+                const el = document.getElementById('server-plan-badge');
+                if (!el) return;
+                // Clear classes
+                el.className = 'server-plan-badge';
+
+                const tag = server && (server.planTag || server.planTier || server.plan) ? (server.planTag || server.planTier || server.plan) : null;
+                const text = humanizePlanTag(tag);
+                if (!tag) {
+                    // show as Free by default
+                    el.textContent = text;
+                    el.style.display = '';
+                    return;
+                }
+
+                el.textContent = text;
+                el.style.display = '';
+
+                // Apply style variants
+                if (String(tag).toLowerCase() === 'pro') {
+                    el.classList.add('server-plan-badge-pro');
+                } else if (String(tag).toLowerCase() === 'enterprise') {
+                    el.classList.add('server-plan-badge-enterprise');
+                } else {
+                    // default appearance for other tiers
+                }
+            } catch (e) { console.error('updateServerPlanBadge error', e); }
+        }
+
+        // Try to initialize badge once servers are loaded
+        document.addEventListener('DOMContentLoaded', function() {
+            // If ServerSelector exists, register callback
+            if (window.ServerSelector && typeof window.ServerSelector.onServerChange === 'function') {
+                window.ServerSelector.onServerChange((guildId, server) => {
+                    updateServerPlanBadge(server);
+                });
+
+                // Attempt initial population from available servers
+                setTimeout(() => {
+                    try {
+                        const guildId = window.ServerSelector.getCurrentGuildId ? window.ServerSelector.getCurrentGuildId() : null;
+                        const servers = window.ServerSelector.getServers ? window.ServerSelector.getServers() : [];
+                        const srv = (servers || []).find(s => s.id === guildId) || (servers || [])[0] || null;
+                        if (srv) updateServerPlanBadge(srv);
+                    } catch (e) { /* ignore */ }
+                }, 200);
+            }
+        });
 
         // Chart.js defaults
         Chart.defaults.color = 'rgba(255, 255, 255, 0.7)';
@@ -722,10 +801,15 @@ class WidgetSystem {
 
                 if (data.user) {
                     document.getElementById('userName').textContent = data.user.globalName || data.user.username || 'User';
-                    document.getElementById('userRole').textContent = data.user.role || 'User';
+                    const normalizedRole = normalizeDashboardRole(data.user.dashboardRole || data.user.role);
+                    document.getElementById('userRole').textContent =
+                        normalizedRole === 'administration' ? 'Administration' :
+                        normalizedRole === 'moderation' ? 'Moderation' :
+                        'Viewer';
 
                     // Store role globally for RBAC
-                    currentUserRole = data.user.role || 'viewer';
+                    currentUserRole = normalizedRole;
+                    currentFeaturePermissions = data.user.permissions?.features || {};
 
                     // Apply role-based visibility
                     applyRoleBasedVisibility();
@@ -816,6 +900,8 @@ class WidgetSystem {
 
                 const iconUrl = currentGuild.icon || 'https://cdn.discordapp.com/embed/avatars/0.png';
                 document.getElementById('currentServerIcon').src = iconUrl;
+                // Update server plan badge if present
+                try { updateServerPlanBadge(currentGuild); } catch(e) { /* ignore */ }
             }
         }
 

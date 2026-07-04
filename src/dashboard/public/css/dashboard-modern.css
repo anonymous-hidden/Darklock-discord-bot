@@ -61,6 +61,20 @@ body {
     line-height: 1.6;
 }
 
+/* Optional flat black mode for specific dashboard pages */
+body.solid-black-theme {
+    background: #000 !important;
+}
+
+body.solid-black-theme .bg-animation {
+    display: none !important;
+}
+
+body.solid-black-theme.dl-grid-bg::before {
+    content: none !important;
+    display: none !important;
+}
+
 /* Animated Background */
 .bg-animation {
     position: fixed;
@@ -357,6 +371,39 @@ body {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+}
+
+.server-dropdown-name-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-width: 0;
+}
+
+.server-name .server-plan-badge,
+.server-dropdown-name-row .server-plan-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    line-height: 1;
+    flex-shrink: 0;
+    text-transform: uppercase;
+}
+
+.server-plan-badge-pro {
+    color: #60a5fa;
+    border: 1px solid rgba(59, 130, 246, 0.45);
+    background: rgba(59, 130, 246, 0.16);
+}
+
+.server-plan-badge-enterprise {
+    color: #f59e0b;
+    border: 1px solid rgba(245, 158, 11, 0.45);
+    background: rgba(245, 158, 11, 0.16);
 }
 
 .server-dropdown-members {

@@ -31,6 +31,167 @@ const Q  = require('./db/queries');
 const MW = require('./middleware');
 const db = require('../utils/database');
 
+const TASK_PRIORITIES = ['low', 'normal', 'high', 'urgent'];
+const TASK_STATUSES = ['requested', 'approved', 'open', 'in progress', 'blocked', 'complete', 'denied'];
+const POLL_STATUSES = ['draft', 'published', 'archived'];
+const UPDATE_CATEGORIES = ['update', 'bug fix', 'security', 'announcement', 'maintenance'];
+
+let _discordBotRef = null;
+
+function setDiscordBot(bot) {
+  _discordBotRef = bot || null;
+}
+
+function roleCanManageUpdates(role) {
+  return ['owner', 'coowner', 'admin', 'pr'].includes(String(role || '').toLowerCase());
+}
+
+function roleCanPublishPolls(role) {
+  return ['owner', 'coowner', 'admin'].includes(String(role || '').toLowerCase());
+}
+
+function roleCanCreateTasks(role) {
+  return ['owner', 'coowner'].includes(String(role || '').toLowerCase());
+}
+
+function roleCanManageServers(role) {
+  return ['owner', 'coowner', 'admin'].includes(String(role || '').toLowerCase());
+}
+
+function computePremiumExpiry(duration, customDate) {
+  const now = new Date();
+  const map = {
+    '1d': 1,
+    '7d': 7,
+    '30d': 30,
+    '90d': 90,
+    '1y': 365,
+  };
+
+  if (duration === 'lifetime') return null;
+  if (duration === 'custom') {
+    const parsed = new Date(customDate || '');
+    if (Number.isNaN(parsed.getTime())) throw new Error('Invalid custom premium expiration date');
+    return parsed.toISOString();
+  }
+
+  const days = map[duration];
+  if (!days) throw new Error('Invalid premium duration');
+  now.setDate(now.getDate() + days);
+  return now.toISOString();
+}
+
+function normalizeUserPlan(plan) {
+  const normalized = String(plan || '').trim().toLowerCase();
+  if (!['free', 'pro', 'enterprise'].includes(normalized)) return null;
+  return normalized;
+}
+
+/**
+ * Mirror a platform-account plan change into the bot runtime DB (security_bot.db)
+ * so the Discord bot + dashboard entitlements update immediately. Platform
+ * accounts link to a Discord user via oauth_provider='discord' + oauth_id.
+ * Returns { mirrored, discordId } for messaging.
+ */
+async function mirrorAccountPlanToBot(account, plan, grantedBy) {
+  const provider = String(account?.oauth_provider || '').toLowerCase();
+  const discordId = String(account?.oauth_id || '').trim();
+
+  if (provider !== 'discord' || !/^\d{5,25}$/.test(discordId)) {
+    return { mirrored: false, discordId: null };
+  }
+  if (!_discordBotRef?.database?.setManualPlanGrant) {
+    return { mirrored: false, discordId };
+  }
+
+  await _discordBotRef.database.setManualPlanGrant('user', discordId, plan, grantedBy || 'admin');
+  _discordBotRef.dashboard?.clearUserPlanCache?.(discordId);
+  return { mirrored: true, discordId };
+}
+
+function canViewTaskForRole(admin, task) {
+  const role = String(admin.role || '').toLowerCase();
+  if (['owner', 'coowner'].includes(role)) return true;
+
+  if (task.assigned_user_id && task.assigned_user_id === admin.id) return true;
+  if (task.assigned_role && task.assigned_role === role) return true;
+
+  if (role === 'pr') {
+    return task.category === 'platform_updates' || task.assigned_role === 'pr';
+  }
+
+  if (role === 'bug_tester') {
+    return task.category === 'bug_reports' || task.assigned_role === 'bug_tester';
+  }
+
+  if (role === 'mod') {
+    return task.category === 'tickets' || task.assigned_role === 'mod';
+  }
+
+  if (role === 'admin') return true;
+  return false;
+}
+
+function isDiscordWebhookUrl(value) {
+  if (!value || typeof value !== 'string') return false;
+  try {
+    const u = new URL(value);
+    return (u.protocol === 'https:' || u.protocol === 'http:') &&
+      u.hostname === 'discord.com' &&
+      /^\/api\/webhooks\/\d+\/.+/.test(u.pathname);
+  } catch (_) {
+    return false;
+  }
+}
+
+async function sendAnnouncementToDiscordWebhook({ title, content, version, visibility, pinned, authorEmail }) {
+  // Prefer explicit env var, then platform config key.
+  const envWebhook = process.env.ANNOUNCEMENTS_DISCORD_WEBHOOK_URL || process.env.DISCORD_ANNOUNCEMENTS_WEBHOOK_URL;
+  let webhookUrl = envWebhook;
+
+  if (!webhookUrl) {
+    const cfg = await Q.getConfig();
+    webhookUrl = cfg.announcements_discord_webhook_url?.value || '';
+  }
+
+  if (!isDiscordWebhookUrl(webhookUrl)) return;
+
+  const safeTitle = String(title || '').slice(0, 256) || 'New Announcement';
+  const safeContent = String(content || '').slice(0, 4000);
+  const safeVersion = String(version || 'n/a').slice(0, 64);
+  const safeVisibility = String(visibility || 'public').slice(0, 32);
+  const safeAuthor = String(authorEmail || 'Unknown').slice(0, 128);
+
+  const payload = {
+    username: 'Darklock Announcements',
+    embeds: [
+      {
+        title: safeTitle,
+        description: safeContent || '(No content)',
+        color: 0x5865f2,
+        fields: [
+          { name: 'Version', value: safeVersion, inline: true },
+          { name: 'Visibility', value: safeVisibility, inline: true },
+          { name: 'Pinned', value: pinned ? 'Yes' : 'No', inline: true },
+          { name: 'Author', value: safeAuthor, inline: false },
+        ],
+        timestamp: new Date().toISOString(),
+      }
+    ]
+  };
+
+  const response = await fetch(webhookUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => '');
+    throw new Error(`Webhook failed with status ${response.status}${body ? `: ${body.slice(0, 200)}` : ''}`);
+  }
+}
+
 // ── File upload config for update packages ──────────────────────────────────────
 const UPDATES_DIR = path.join(__dirname, '../downloads/updates');
 if (!fs.existsSync(UPDATES_DIR)) fs.mkdirSync(UPDATES_DIR, { recursive: true });
@@ -198,23 +359,43 @@ router.get('/shell', async (req, res) => {
   try {
     const { ROLE_HIERARCHY } = require('./db/schema');
     const level = req.admin.level;
+    const role = String(req.admin.role || '').toLowerCase();
+
+    const canSee = {
+      overview: true,
+      tickets: ['owner', 'coowner', 'admin', 'mod'].includes(role),
+      announcements: ['owner', 'coowner', 'admin', 'pr'].includes(role),
+      accounts: ['owner', 'coowner', 'admin'].includes(role),
+      roles: ['owner', 'coowner'].includes(role),
+      app_updates: ['owner', 'coowner', 'admin'].includes(role),
+      shop: ['owner', 'coowner', 'admin'].includes(role),
+      server: ['owner', 'coowner', 'admin'].includes(role),
+      polls: ['owner', 'coowner', 'admin'].includes(role),
+      tasks: ['owner', 'coowner', 'admin', 'mod', 'bug_tester', 'pr'].includes(role),
+      bug_reports: ['owner', 'coowner', 'admin', 'mod', 'bug_tester', 'helper'].includes(role),
+      system_logs: ['owner', 'coowner', 'admin', 'mod'].includes(role),
+      maintenance: ['owner', 'coowner', 'admin'].includes(role),
+      settings: ['owner', 'coowner', 'admin'].includes(role),
+      analytics: ['owner', 'coowner', 'admin', 'mod'].includes(role),
+    };
 
     const tabs = [
       { id: 'overview',       label: 'Overview',              icon: 'layout-dashboard', minLevel: 0 },
       { id: 'tickets',        label: 'Tickets',               icon: 'ticket',           minLevel: 30 },
-      { id: 'announcements',  label: 'Announcements',         icon: 'megaphone',        minLevel: 50 },
+      { id: 'announcements',  label: 'Platform Updates',      icon: 'megaphone',        minLevel: 50 },
       { id: 'accounts',       label: 'Accounts',              icon: 'users',            minLevel: 50 },
       { id: 'roles',          label: 'Role & Access',         icon: 'shield-check',     minLevel: 90 },
       { id: 'app-updates',    label: 'App Updates',           icon: 'download-cloud',   minLevel: 50 },
       { id: 'shop',           label: 'Shop',                  icon: 'shopping-bag',     minLevel: 50 },
-      { id: 'server',          label: 'Server',                icon: 'server',           minLevel: 70 },
+      { id: 'server',         label: 'Server',                icon: 'server',           minLevel: 70 },
+      { id: 'polls',          label: 'Polls',                 icon: 'bar-chart-3',      minLevel: 50 },
+      { id: 'tasks',          label: 'Tasks',                 icon: 'check-square',     minLevel: 30 },
       { id: 'bug-reports',    label: 'Bug Reports',           icon: 'bug',              minLevel: 30 },
       { id: 'system-logs',    label: 'System Logs',           icon: 'file-text',        minLevel: 30 },
-      { id: 'themes',          label: 'Themes',                icon: 'palette',          minLevel: 50 },
-      { id: 'maintenance',     label: 'Maintenance',           icon: 'tool',             minLevel: 70 },
+      { id: 'maintenance',    label: 'Maintenance',           icon: 'tool',             minLevel: 70 },
       { id: 'settings',       label: 'Platform Settings',     icon: 'settings',         minLevel: 50 },
-      { id: 'analytics',       label: 'Analytics',             icon: 'chart-bar',        minLevel: 30 },
-    ].filter(t => level >= t.minLevel);
+      { id: 'analytics',      label: 'Analytics',             icon: 'chart-bar',        minLevel: 30 },
+    ].filter(t => level >= t.minLevel && canSee[t.id.replace('-', '_')] !== false);
 
     res.json({
       success: true,
@@ -253,19 +434,40 @@ router.get('/overview', MW.helperOrAbove, async (req, res) => {
 // ═══════════════════════════════════════════════════════════════════════════════
 //  2) ANNOUNCEMENTS
 // ═══════════════════════════════════════════════════════════════════════════════
-router.get('/announcements', MW.modOrAbove, MW.auditLog('announcements'), async (req, res) => {
+router.get('/announcements', MW.helperOrAbove, MW.auditLog('platform_updates'), async (req, res) => {
   try {
-    const data = await Q.getAnnouncements({ limit: Number(req.query.limit) || 50, offset: Number(req.query.offset) || 0 });
+    const data = await Q.getAnnouncements({
+      limit: Number(req.query.limit) || 50,
+      offset: Number(req.query.offset) || 0,
+    });
     res.json({ success: true, announcements: data });
   } catch (err) {
     res.status(500).json({ success: false, error: 'Failed to load announcements' });
   }
 });
 
-router.post('/announcements', MW.modOrAbove, MW.auditLog('announcements'), async (req, res) => {
+router.post('/announcements', MW.helperOrAbove, MW.auditLog('platform_updates'), async (req, res) => {
   try {
-    const { title, content, version, visibility, pinned } = req.body;
+    const role = String(req.admin.role || '').toLowerCase();
+    if (!roleCanManageUpdates(role)) {
+      return res.status(403).json({ success: false, error: 'Insufficient permissions for platform updates' });
+    }
+
+    const { title, content, version, category, status, visibility, pinned } = req.body;
     if (!title || !content) return res.status(400).json({ success: false, error: 'Title and content are required' });
+
+    const nextCategory = UPDATE_CATEGORIES.includes(String(category || '').toLowerCase())
+      ? String(category).toLowerCase()
+      : 'update';
+
+    const requestedStatus = String(status || 'published').toLowerCase();
+    if (!['draft', 'published', 'archived'].includes(requestedStatus)) {
+      return res.status(400).json({ success: false, error: 'Invalid status for platform update' });
+    }
+
+    const finalStatus = requestedStatus === 'published' && !['owner', 'coowner', 'admin', 'pr'].includes(role)
+      ? 'draft'
+      : requestedStatus;
 
     const autoVersion = version || await Q.getNextAnnouncementVersion();
 
@@ -279,10 +481,13 @@ router.post('/announcements', MW.modOrAbove, MW.auditLog('announcements'), async
     const announcement = await Q.createAnnouncement({
       id, title, content,
       version: autoVersion,
+      category: nextCategory,
+      status: finalStatus,
       visibility: visibility || 'public',
       pinned: !!pinned,
       author_id: req.admin.id,
       author_email: req.admin.email,
+      published_at: finalStatus === 'published' ? new Date().toISOString() : null,
     });
 
     // Also push to the updates table so it appears on /platform/update
@@ -295,6 +500,20 @@ router.post('/announcements', MW.modOrAbove, MW.auditLog('announcements'), async
       `, [id, title, autoVersion, content, _now, req.admin.id, _now]);
     } catch (e) { console.error('[Admin v4] updates sync error:', e.message); /* non-critical */ }
 
+    // Optional Discord announcement mirror (non-blocking for admin UX).
+    try {
+      await sendAnnouncementToDiscordWebhook({
+        title,
+        content,
+        version: autoVersion,
+        visibility: visibility || 'public',
+        pinned: !!pinned,
+        authorEmail: req.admin.email,
+      });
+    } catch (e) {
+      console.error('[Admin v4] Discord announcement webhook error:', e.message || e);
+    }
+
     res.json({ success: true, announcement });
   } catch (err) {
     console.error('[Admin v4] Create announcement error:', err);
@@ -302,21 +521,68 @@ router.post('/announcements', MW.modOrAbove, MW.auditLog('announcements'), async
   }
 });
 
-router.put('/announcements/:id', MW.modOrAbove, MW.auditLog('announcements'), async (req, res) => {
+router.put('/announcements/:id', MW.helperOrAbove, MW.auditLog('platform_updates'), async (req, res) => {
   try {
     const existing = await Q.getAnnouncementById(req.params.id);
     if (!existing) return res.status(404).json({ success: false, error: 'Not found' });
 
-    const updated = await Q.updateAnnouncement(req.params.id, req.body);
+    const role = String(req.admin.role || '').toLowerCase();
+    if (!roleCanManageUpdates(role)) {
+      return res.status(403).json({ success: false, error: 'Insufficient permissions for platform updates' });
+    }
+
+    const patch = { ...req.body };
+    if (patch.category && !UPDATE_CATEGORIES.includes(String(patch.category).toLowerCase())) {
+      return res.status(400).json({ success: false, error: 'Invalid update category' });
+    }
+
+    if (patch.status) {
+      const nextStatus = String(patch.status).toLowerCase();
+      if (!['draft', 'published', 'archived'].includes(nextStatus)) {
+        return res.status(400).json({ success: false, error: 'Invalid update status' });
+      }
+      patch.status = nextStatus;
+      if (nextStatus === 'published' && !existing.published_at) {
+        patch.published_at = new Date().toISOString();
+      }
+    }
+
+    const updated = await Q.updateAnnouncement(req.params.id, patch);
+
+    if (updated?.status === 'published') {
+      try {
+        const _db = require('../utils/database');
+        const _now = new Date().toISOString();
+        await _db.run(`
+          INSERT OR REPLACE INTO updates (id, title, version, type, content, published_at, created_by, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, COALESCE((SELECT created_at FROM updates WHERE id = ?), ?))
+        `, [
+          updated.id,
+          updated.title,
+          updated.version || '0.0.0',
+          updated.category === 'bug fix' ? 'bugfix' : updated.category === 'security' ? 'major' : 'minor',
+          updated.content,
+          updated.published_at || _now,
+          req.admin.id,
+          updated.id,
+          _now,
+        ]);
+      } catch (_) { /* non-critical */ }
+    }
+
     res.json({ success: true, announcement: updated });
   } catch (err) {
     res.status(500).json({ success: false, error: 'Failed to update announcement' });
   }
 });
 
-router.delete('/announcements/:id', MW.adminOrAbove, MW.auditLog('announcements'), async (req, res) => {
+router.delete('/announcements/:id', MW.adminOrAbove, MW.auditLog('platform_updates'), async (req, res) => {
   try {
     await Q.deleteAnnouncement(req.params.id);
+    try {
+      const _db = require('../utils/database');
+      await _db.run(`DELETE FROM updates WHERE id = ?`, [req.params.id]);
+    } catch (_) { /* non-critical */ }
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ success: false, error: 'Failed to delete announcement' });
@@ -336,6 +602,109 @@ router.get('/accounts', MW.modOrAbove, MW.auditLog('accounts'), async (req, res)
   }
 });
 
+router.get('/accounts/summary', MW.modOrAbove, MW.auditLog('accounts'), async (req, res) => {
+  try {
+    const accountSearch = String(req.query.accountSearch || req.query.search || '').trim();
+    const accountFilter = String(req.query.accountFilter || '').trim();
+    const accountLimit = Math.min(Number(req.query.accountLimit) || 50, 200);
+    const accountOffset = Math.max(Number(req.query.accountOffset) || 0, 0);
+
+    const serverSearch = String(req.query.serverSearch || req.query.search || '').trim();
+    const serverLimit = Math.min(Number(req.query.serverLimit) || 50, 500);
+    const serverOffset = Math.max(Number(req.query.serverOffset) || 0, 0);
+
+    const accountData = await Q.getAccounts({
+      search: accountSearch,
+      filter: accountFilter,
+      limit: accountLimit,
+      offset: accountOffset,
+    });
+
+    const role = String(req.admin.role || '').toLowerCase();
+    if (!roleCanManageServers(role)) {
+      return res.status(403).json({ success: false, error: 'Insufficient permissions for server lookup' });
+    }
+
+    const dbServersData = await Q.searchServerAccounts({ q: serverSearch, limit: 5000, offset: 0 });
+    const dbServers = Array.isArray(dbServersData.servers) ? dbServersData.servers : [];
+
+    const guildCache = _discordBotRef?.client?.guilds?.cache;
+    const liveServers = guildCache
+      ? Array.from(guildCache.values()).map((g) => ({
+          server_id: String(g.id),
+          server_name: String(g.name || ''),
+          owner_user_id: String(g.ownerId || ''),
+          member_count: Number(g.memberCount || 0),
+          bot_joined: 1,
+          source: 'discord',
+        }))
+      : [];
+
+    const mergedMap = new Map();
+    for (const row of dbServers) {
+      const key = String(row.server_id || '').trim();
+      if (!key) continue;
+      mergedMap.set(key, { ...row, source: 'database' });
+    }
+
+    for (const live of liveServers) {
+      const key = String(live.server_id || '').trim();
+      if (!key) continue;
+      const existing = mergedMap.get(key) || {};
+      mergedMap.set(key, {
+        ...existing,
+        ...live,
+        premium_active: existing.premium_active ?? 0,
+        premium_expires_at: existing.premium_expires_at ?? null,
+        premium_plan: existing.premium_plan ?? null,
+        blocked: existing.blocked ?? 0,
+        blocked_reason: existing.blocked_reason ?? null,
+        notes: existing.notes ?? null,
+        updated_at: existing.updated_at ?? null,
+        updated_by: existing.updated_by ?? null,
+      });
+    }
+
+    let mergedServers = Array.from(mergedMap.values());
+    if (serverSearch) {
+      const needle = serverSearch.toLowerCase();
+      mergedServers = mergedServers.filter((s) =>
+        String(s.server_id || '').toLowerCase() === needle ||
+        String(s.server_id || '').toLowerCase().includes(needle) ||
+        String(s.server_name || '').toLowerCase().includes(needle) ||
+        String(s.owner_user_id || '').toLowerCase().includes(needle)
+      );
+    }
+
+    mergedServers.sort((a, b) => {
+      const aUpdated = Date.parse(a.updated_at || '') || 0;
+      const bUpdated = Date.parse(b.updated_at || '') || 0;
+      if (bUpdated !== aUpdated) return bUpdated - aUpdated;
+      return String(a.server_name || a.server_id || '').localeCompare(String(b.server_name || b.server_id || ''));
+    });
+
+    const serverTotal = mergedServers.length;
+    const pagedServers = mergedServers.slice(serverOffset, serverOffset + serverLimit);
+
+    res.json({
+      success: true,
+      accounts: accountData.accounts || [],
+      accountsTotal: accountData.total || 0,
+      accountLimit,
+      accountOffset,
+      servers: pagedServers,
+      serversTotal: serverTotal,
+      serverLimit,
+      serverOffset,
+      liveServerCount: liveServers.length,
+      recordedServerCount: dbServers.length,
+    });
+  } catch (err) {
+    console.error('[Admin v4] Accounts summary error:', err);
+    res.status(500).json({ success: false, error: 'Failed to load accounts summary' });
+  }
+});
+
 router.get('/accounts/:id', MW.modOrAbove, async (req, res) => {
   try {
     const account = await Q.getAccountById(req.params.id);
@@ -348,11 +717,54 @@ router.get('/accounts/:id', MW.modOrAbove, async (req, res) => {
   }
 });
 
+router.post('/accounts/:id/set-plan', MW.adminOrAbove, MW.sensitiveActionLimiter, MW.requireConfirmation, MW.auditLog('accounts'), async (req, res) => {
+  try {
+    const nextPlan = normalizeUserPlan(req.body?.plan);
+    if (!nextPlan) {
+      return res.status(400).json({ success: false, error: 'Plan must be free, pro, or enterprise' });
+    }
+
+    const before = await Q.getAccountById(req.params.id);
+    if (!before) return res.status(404).json({ success: false, error: 'Account not found' });
+
+    const updated = await Q.setAccountPlan(req.params.id, nextPlan, req.admin.email);
+
+    // Mirror to the bot runtime DB so Discord-linked users update immediately.
+    let mirror = { mirrored: false, discordId: null };
+    try {
+      mirror = await mirrorAccountPlanToBot(updated || before, nextPlan, req.admin.email);
+    } catch (mirrorErr) {
+      console.warn('[Admin v4] Plan mirror to bot failed:', mirrorErr.message);
+    }
+
+    await Q.logAudit({
+      admin_id: req.admin.id,
+      admin_email: req.admin.email,
+      action: 'set_account_plan',
+      category: 'accounts',
+      target_type: 'user',
+      target_id: req.params.id,
+      old_value: { plan: before.plan || 'free' },
+      new_value: { plan: updated?.plan || nextPlan, discord_mirror: mirror.mirrored ? mirror.discordId : null },
+      ip_address: MW.getClientIP(req)
+    });
+
+    const mirrorNote = mirror.mirrored
+      ? ` and applied to Discord user ${mirror.discordId}`
+      : ' (no linked Discord account to sync to the bot)';
+    res.json({ success: true, account: updated, message: `Account plan updated to ${nextPlan}${mirrorNote}` });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message || 'Failed to update account plan' });
+  }
+});
+
 router.post('/accounts/:id/grant-premium', MW.adminOrAbove, MW.sensitiveActionLimiter, MW.auditLog('accounts'), async (req, res) => {
   try {
-    await Q.updateAccountRole(req.params.id, 'premium');
-    await Q.logAudit({ admin_id: req.admin.id, admin_email: req.admin.email, action: 'grant_premium', category: 'accounts', target_type: 'user', target_id: req.params.id, ip_address: MW.getClientIP(req) });
-    res.json({ success: true, message: 'Premium granted' });
+    const updated = await Q.setAccountPlan(req.params.id, 'pro', req.admin.email);
+    let mirror = { mirrored: false, discordId: null };
+    try { mirror = await mirrorAccountPlanToBot(updated, 'pro', req.admin.email); } catch (e) { console.warn('[Admin v4] grant-premium mirror failed:', e.message); }
+    await Q.logAudit({ admin_id: req.admin.id, admin_email: req.admin.email, action: 'grant_premium', category: 'accounts', target_type: 'user', target_id: req.params.id, new_value: { plan: 'pro', discord_mirror: mirror.mirrored ? mirror.discordId : null }, ip_address: MW.getClientIP(req) });
+    res.json({ success: true, message: mirror.mirrored ? `Pro plan granted and applied to Discord user ${mirror.discordId}` : 'Pro plan granted' });
   } catch (err) {
     res.status(500).json({ success: false, error: 'Failed to grant premium' });
   }
@@ -360,11 +772,322 @@ router.post('/accounts/:id/grant-premium', MW.adminOrAbove, MW.sensitiveActionLi
 
 router.post('/accounts/:id/remove-premium', MW.adminOrAbove, MW.sensitiveActionLimiter, MW.auditLog('accounts'), async (req, res) => {
   try {
-    await Q.updateAccountRole(req.params.id, 'user');
-    await Q.logAudit({ admin_id: req.admin.id, admin_email: req.admin.email, action: 'remove_premium', category: 'accounts', target_type: 'user', target_id: req.params.id, ip_address: MW.getClientIP(req) });
-    res.json({ success: true, message: 'Premium removed' });
+    const updated = await Q.setAccountPlan(req.params.id, 'free', req.admin.email);
+    let mirror = { mirrored: false, discordId: null };
+    try { mirror = await mirrorAccountPlanToBot(updated, 'free', req.admin.email); } catch (e) { console.warn('[Admin v4] remove-premium mirror failed:', e.message); }
+    await Q.logAudit({ admin_id: req.admin.id, admin_email: req.admin.email, action: 'remove_premium', category: 'accounts', target_type: 'user', target_id: req.params.id, new_value: { plan: 'free', discord_mirror: mirror.mirrored ? mirror.discordId : null }, ip_address: MW.getClientIP(req) });
+    res.json({ success: true, message: mirror.mirrored ? `Premium removed and applied to Discord user ${mirror.discordId}` : 'Premium removed' });
   } catch (err) {
     res.status(500).json({ success: false, error: 'Failed to remove premium' });
+  }
+});
+
+// ── Discord-keyed plan grants ────────────────────────────────────────────────
+// Writes into the bot's security_bot.db (manual_plan_grants / guild_subscriptions),
+// which is what actually gates bot features and the Discord dashboard. Platform
+// account plans (set-plan above) do NOT link to Discord IDs, so these routes are
+// the correct way to grant Pro/Enterprise to a real Discord user or server.
+router.post('/accounts/discord-grant', MW.adminOrAbove, MW.sensitiveActionLimiter, MW.requireConfirmation, MW.auditLog('accounts'), async (req, res) => {
+  try {
+    if (!_discordBotRef?.database?.setManualPlanGrant) {
+      return res.status(503).json({ success: false, error: 'Discord bot database is not available' });
+    }
+    const scope = String(req.body?.scope || '').trim().toLowerCase();
+    const targetId = String(req.body?.targetId || '').trim();
+    const plan = normalizeUserPlan(req.body?.plan);
+    if (!['user', 'guild'].includes(scope)) {
+      return res.status(400).json({ success: false, error: 'Scope must be user or guild' });
+    }
+    if (!/^\d{5,25}$/.test(targetId)) {
+      return res.status(400).json({ success: false, error: 'Target must be a valid Discord ID (5-25 digits)' });
+    }
+    if (!plan) {
+      return res.status(400).json({ success: false, error: 'Plan must be free, pro, or enterprise' });
+    }
+
+    await _discordBotRef.database.setManualPlanGrant(scope, targetId, plan, req.admin.email);
+
+    // Apply immediately: bust cached plan lookups.
+    if (scope === 'user') {
+      _discordBotRef.dashboard?.clearUserPlanCache?.(targetId);
+    } else {
+      // Guild grant may cover the owner's dashboard tier via getGuildPlan; clear
+      // the owner's cache if we can resolve them.
+      try {
+        const guild = _discordBotRef.client?.guilds?.cache?.get(targetId);
+        if (guild?.ownerId) _discordBotRef.dashboard?.clearUserPlanCache?.(guild.ownerId);
+      } catch (_) { /* best-effort */ }
+    }
+
+    await Q.logAudit({
+      admin_id: req.admin.id,
+      admin_email: req.admin.email,
+      action: 'discord_plan_grant',
+      category: 'accounts',
+      target_type: scope,
+      target_id: targetId,
+      new_value: { scope, plan },
+      ip_address: MW.getClientIP(req)
+    });
+
+    res.json({ success: true, message: `Granted ${plan} to ${scope} ${targetId}` });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message || 'Failed to grant Discord plan' });
+  }
+});
+
+router.post('/accounts/discord-revoke', MW.adminOrAbove, MW.sensitiveActionLimiter, MW.auditLog('accounts'), async (req, res) => {
+  try {
+    if (!_discordBotRef?.database?.setManualPlanGrant) {
+      return res.status(503).json({ success: false, error: 'Discord bot database is not available' });
+    }
+    const scope = String(req.body?.scope || '').trim().toLowerCase();
+    const targetId = String(req.body?.targetId || '').trim();
+    if (!['user', 'guild'].includes(scope)) {
+      return res.status(400).json({ success: false, error: 'Scope must be user or guild' });
+    }
+    if (!/^\d{5,25}$/.test(targetId)) {
+      return res.status(400).json({ success: false, error: 'Target must be a valid Discord ID (5-25 digits)' });
+    }
+
+    // Setting to 'free' removes the manual grant (and clears any guild mirror).
+    await _discordBotRef.database.setManualPlanGrant(scope, targetId, 'free', req.admin.email);
+
+    if (scope === 'user') {
+      _discordBotRef.dashboard?.clearUserPlanCache?.(targetId);
+    } else {
+      try {
+        const guild = _discordBotRef.client?.guilds?.cache?.get(targetId);
+        if (guild?.ownerId) _discordBotRef.dashboard?.clearUserPlanCache?.(guild.ownerId);
+      } catch (_) { /* best-effort */ }
+    }
+
+    await Q.logAudit({
+      admin_id: req.admin.id,
+      admin_email: req.admin.email,
+      action: 'discord_plan_revoke',
+      category: 'accounts',
+      target_type: scope,
+      target_id: targetId,
+      new_value: { scope, plan: 'free' },
+      ip_address: MW.getClientIP(req)
+    });
+
+    res.json({ success: true, message: `Revoked plan for ${scope} ${targetId}` });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message || 'Failed to revoke Discord plan' });
+  }
+});
+
+router.get('/accounts/servers/search', MW.adminOrAbove, MW.auditLog('accounts'), async (req, res) => {
+  try {
+    const role = String(req.admin.role || '').toLowerCase();
+    if (!roleCanManageServers(role)) {
+      return res.status(403).json({ success: false, error: 'Insufficient permissions for server lookup' });
+    }
+
+    const q = String(req.query.q || '').trim();
+    const limit = Math.min(Number(req.query.limit) || 50, 200);
+    const offset = Number(req.query.offset) || 0;
+    const data = await Q.searchServerAccounts({ q, limit, offset });
+    res.json({ success: true, ...data });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Failed to search servers' });
+  }
+});
+
+router.get('/accounts/servers/:serverId', MW.adminOrAbove, MW.auditLog('accounts'), async (req, res) => {
+  try {
+    const serverId = String(req.params.serverId || '').trim();
+    const row = await Q.getServerAccountById(serverId);
+    if (row) return res.json({ success: true, server: row });
+
+    // Fallback: the server may be live (bot is in it) but not yet recorded in
+    // admin_server_accounts. Build a record from the bot's live guild cache and
+    // its runtime subscription so the details panel works instead of 404ing.
+    const guild = _discordBotRef?.client?.guilds?.cache?.get(serverId);
+    if (guild) {
+      let premiumPlan = null;
+      let premiumActive = 0;
+      try {
+        const plan = _discordBotRef?.database?.getManualGuildPlan
+          ? await _discordBotRef.database.getManualGuildPlan(serverId)
+          : null;
+        const sub = _discordBotRef?.database?.getGuildSubscription
+          ? await _discordBotRef.database.getGuildSubscription(serverId)
+          : null;
+        premiumPlan = plan || sub?.plan || null;
+        premiumActive = (premiumPlan && premiumPlan !== 'free') ? 1 : 0;
+      } catch (_) { /* best-effort */ }
+
+      return res.json({
+        success: true,
+        server: {
+          server_id: serverId,
+          server_name: String(guild.name || ''),
+          owner_user_id: String(guild.ownerId || ''),
+          member_count: Number(guild.memberCount || 0),
+          bot_joined: 1,
+          premium_active: premiumActive,
+          premium_plan: premiumPlan,
+          premium_expires_at: null,
+          blocked: 0,
+          blocked_reason: null,
+          notes: null,
+          updated_at: null,
+          updated_by: null,
+          source: 'discord',
+        },
+      });
+    }
+
+    return res.status(404).json({ success: false, error: 'Server not found' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Failed to load server details' });
+  }
+});
+
+router.post('/accounts/servers/:serverId/sync', MW.adminOrAbove, MW.auditLog('accounts'), async (req, res) => {
+  try {
+    const { server_name, owner_user_id, bot_joined, notes } = req.body || {};
+    const updated = await Q.upsertServerAccount({
+      server_id: req.params.serverId,
+      server_name,
+      owner_user_id,
+      bot_joined,
+      notes,
+      updated_by: req.admin.email,
+    });
+    res.json({ success: true, server: updated });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Failed to sync server account' });
+  }
+});
+
+router.post('/accounts/servers/:serverId/grant-premium', MW.adminOrAbove, MW.sensitiveActionLimiter, MW.requireConfirmation, MW.auditLog('accounts'), async (req, res) => {
+  try {
+    const role = String(req.admin.role || '').toLowerCase();
+    if (!['owner', 'coowner', 'admin'].includes(role)) {
+      return res.status(403).json({ success: false, error: 'Insufficient permissions for premium management' });
+    }
+
+    const duration = String(req.body.duration || '').trim();
+    const expiresAt = computePremiumExpiry(duration, req.body.customDate);
+    const updated = await Q.setServerPremium({
+      server_id: req.params.serverId,
+      premium_active: true,
+      premium_expires_at: expiresAt,
+      premium_plan: duration,
+      updated_by: req.admin.email,
+    });
+
+    await Q.logAudit({
+      admin_id: req.admin.id,
+      admin_email: req.admin.email,
+      action: 'grant_server_premium',
+      category: 'accounts',
+      target_type: 'server',
+      target_id: req.params.serverId,
+      new_value: { duration, expiresAt },
+      ip_address: MW.getClientIP(req),
+    });
+
+    res.json({ success: true, server: updated, message: 'Server premium granted' });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message || 'Failed to grant server premium' });
+  }
+});
+
+router.post('/accounts/servers/:serverId/remove-premium', MW.adminOrAbove, MW.sensitiveActionLimiter, MW.requireConfirmation, MW.auditLog('accounts'), async (req, res) => {
+  try {
+    const role = String(req.admin.role || '').toLowerCase();
+    if (!['owner', 'coowner', 'admin'].includes(role)) {
+      return res.status(403).json({ success: false, error: 'Insufficient permissions for premium management' });
+    }
+
+    const updated = await Q.setServerPremium({
+      server_id: req.params.serverId,
+      premium_active: false,
+      premium_expires_at: null,
+      premium_plan: null,
+      updated_by: req.admin.email,
+    });
+
+    await Q.logAudit({
+      admin_id: req.admin.id,
+      admin_email: req.admin.email,
+      action: 'remove_server_premium',
+      category: 'accounts',
+      target_type: 'server',
+      target_id: req.params.serverId,
+      ip_address: MW.getClientIP(req),
+    });
+
+    res.json({ success: true, server: updated, message: 'Server premium removed' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Failed to remove server premium' });
+  }
+});
+
+router.post('/accounts/servers/:serverId/block', MW.adminOrAbove, MW.sensitiveActionLimiter, MW.requireConfirmation, MW.auditLog('accounts'), async (req, res) => {
+  try {
+    const role = String(req.admin.role || '').toLowerCase();
+    if (!['owner', 'coowner', 'admin'].includes(role)) {
+      return res.status(403).json({ success: false, error: 'Insufficient permissions for server blocking' });
+    }
+
+    const reason = String(req.body.reason || '').trim() || 'Blocked by admin';
+    const updated = await Q.setServerBlocked({
+      server_id: req.params.serverId,
+      blocked: true,
+      blocked_reason: reason,
+      updated_by: req.admin.email,
+    });
+
+    await Q.logAudit({
+      admin_id: req.admin.id,
+      admin_email: req.admin.email,
+      action: 'block_server',
+      category: 'accounts',
+      target_type: 'server',
+      target_id: req.params.serverId,
+      new_value: { reason },
+      ip_address: MW.getClientIP(req),
+    });
+
+    res.json({ success: true, server: updated, message: 'Server blocked' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Failed to block server' });
+  }
+});
+
+router.post('/accounts/servers/:serverId/unblock', MW.adminOrAbove, MW.sensitiveActionLimiter, MW.requireConfirmation, MW.auditLog('accounts'), async (req, res) => {
+  try {
+    const role = String(req.admin.role || '').toLowerCase();
+    if (!['owner', 'coowner', 'admin'].includes(role)) {
+      return res.status(403).json({ success: false, error: 'Insufficient permissions for server unblocking' });
+    }
+
+    const updated = await Q.setServerBlocked({
+      server_id: req.params.serverId,
+      blocked: false,
+      blocked_reason: null,
+      updated_by: req.admin.email,
+    });
+
+    await Q.logAudit({
+      admin_id: req.admin.id,
+      admin_email: req.admin.email,
+      action: 'unblock_server',
+      category: 'accounts',
+      target_type: 'server',
+      target_id: req.params.serverId,
+      ip_address: MW.getClientIP(req),
+    });
+
+    res.json({ success: true, server: updated, message: 'Server unblocked' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Failed to unblock server' });
   }
 });
 
@@ -441,7 +1164,7 @@ router.post('/roles/admins', MW.ownerOrCoowner, MW.sensitiveActionLimiter, MW.au
     if (!email || !password) return res.status(400).json({ success: false, error: 'Email and password required' });
     if (password.length < 12) return res.status(400).json({ success: false, error: 'Password must be at least 12 characters' });
 
-    const validRoles = ['helper', 'mod', 'admin', 'coowner'];
+    const validRoles = ['helper', 'bug_tester', 'pr', 'mod', 'admin', 'coowner'];
     if (req.admin.role !== 'owner' && role === 'coowner') {
       return res.status(403).json({ success: false, error: 'Only owner can create co-owner accounts' });
     }
@@ -476,7 +1199,7 @@ router.put('/roles/admins/:id', MW.ownerOrCoowner, MW.sensitiveActionLimiter, MW
       return res.status(403).json({ success: false, error: 'Cannot modify owner account' });
     }
 
-    const validRoles = ['helper', 'mod', 'admin', 'coowner', 'owner'];
+    const validRoles = ['helper', 'bug_tester', 'pr', 'mod', 'admin', 'coowner', 'owner'];
     if (!validRoles.includes(role)) return res.status(400).json({ success: false, error: 'Invalid role' });
     if (role === 'owner' && req.admin.role !== 'owner') return res.status(403).json({ success: false, error: 'Only owner can assign owner role' });
 
@@ -683,6 +1406,408 @@ router.delete('/app-updates/:id', MW.ownerOrCoowner, MW.sensitiveActionLimiter, 
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ success: false, error: 'Failed to delete update' });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  5b) POLLS
+// ═══════════════════════════════════════════════════════════════════════════════
+router.get('/polls', MW.modOrAbove, MW.auditLog('polls'), async (req, res) => {
+  try {
+    const status = req.query.status ? String(req.query.status).toLowerCase() : undefined;
+    if (status && !POLL_STATUSES.includes(status)) {
+      return res.status(400).json({ success: false, error: 'Invalid poll status filter' });
+    }
+    const limit = Math.min(Number(req.query.limit) || 100, 500);
+    const offset = Number(req.query.offset) || 0;
+    const data = await Q.getPolls({ status, limit, offset });
+    res.json({ success: true, ...data });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Failed to load polls' });
+  }
+});
+
+router.get('/polls/:id', MW.modOrAbove, MW.auditLog('polls'), async (req, res) => {
+  try {
+    const poll = await Q.getPollById(req.params.id);
+    if (!poll) return res.status(404).json({ success: false, error: 'Poll not found' });
+    res.json({ success: true, poll });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Failed to load poll' });
+  }
+});
+
+router.post('/polls', MW.adminOrAbove, MW.sensitiveActionLimiter, MW.requireConfirmation, MW.auditLog('polls'), async (req, res) => {
+  try {
+    const role = String(req.admin.role || '').toLowerCase();
+    const { title, description, type, status, options } = req.body || {};
+    const optionList = Array.isArray(options) ? options.map(o => String(o || '').trim()).filter(Boolean) : [];
+
+    if (!title || optionList.length < 2) {
+      return res.status(400).json({ success: false, error: 'Poll title and at least 2 options are required' });
+    }
+
+    const requestedStatus = String(status || 'draft').toLowerCase();
+    if (!POLL_STATUSES.includes(requestedStatus)) {
+      return res.status(400).json({ success: false, error: 'Invalid poll status' });
+    }
+
+    const finalStatus = requestedStatus === 'published' && !roleCanPublishPolls(role)
+      ? 'draft'
+      : requestedStatus;
+
+    const poll = await Q.createPoll({
+      id: crypto.randomUUID(),
+      title: String(title).trim(),
+      description: description ? String(description).trim() : null,
+      type: type ? String(type).trim() : 'feature',
+      status: finalStatus,
+      options: optionList,
+      created_by: req.admin.id,
+      updated_by: req.admin.id,
+      published_by: finalStatus === 'published' ? req.admin.id : null,
+    });
+
+    await Q.logAudit({
+      admin_id: req.admin.id,
+      admin_email: req.admin.email,
+      action: 'create_poll',
+      category: 'polls',
+      target_type: 'poll',
+      target_id: poll.id,
+      new_value: { status: finalStatus, title: poll.title },
+      ip_address: MW.getClientIP(req),
+    });
+
+    res.json({ success: true, poll });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Failed to create poll' });
+  }
+});
+
+router.put('/polls/:id', MW.adminOrAbove, MW.sensitiveActionLimiter, MW.requireConfirmation, MW.auditLog('polls'), async (req, res) => {
+  try {
+    const role = String(req.admin.role || '').toLowerCase();
+    const existing = await Q.getPollById(req.params.id);
+    if (!existing) return res.status(404).json({ success: false, error: 'Poll not found' });
+
+    const patch = { ...req.body };
+    if (patch.status) {
+      patch.status = String(patch.status).toLowerCase();
+      if (!POLL_STATUSES.includes(patch.status)) {
+        return res.status(400).json({ success: false, error: 'Invalid poll status' });
+      }
+      if (patch.status === 'published' && !roleCanPublishPolls(role)) {
+        return res.status(403).json({ success: false, error: 'Only owner/co-owner/admin can publish polls' });
+      }
+    }
+
+    if (patch.options) {
+      const optionList = Array.isArray(patch.options)
+        ? patch.options.map(o => String(o || '').trim()).filter(Boolean)
+        : [];
+      if (optionList.length < 2) {
+        return res.status(400).json({ success: false, error: 'At least 2 poll options are required' });
+      }
+      patch.options = optionList;
+    }
+
+    patch.updated_by = req.admin.id;
+    if (patch.status === 'published') patch.published_by = req.admin.id;
+
+    const poll = await Q.updatePoll(req.params.id, patch);
+    res.json({ success: true, poll });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Failed to update poll' });
+  }
+});
+
+router.delete('/polls/:id', MW.ownerOrCoowner, MW.sensitiveActionLimiter, MW.requireConfirmation, MW.auditLog('polls'), async (req, res) => {
+  try {
+    await Q.deletePoll(req.params.id);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Failed to delete poll' });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  5bb) TASKS
+// ═══════════════════════════════════════════════════════════════════════════════
+router.get('/tasks', MW.helperOrAbove, MW.auditLog('tasks'), async (req, res) => {
+  try {
+    const status = req.query.status ? String(req.query.status).toLowerCase() : undefined;
+    const assigned_role = req.query.assigned_role ? String(req.query.assigned_role).toLowerCase() : undefined;
+    const limit = Math.min(Number(req.query.limit) || 100, 500);
+    const offset = Number(req.query.offset) || 0;
+
+    if (status && !TASK_STATUSES.includes(status)) {
+      return res.status(400).json({ success: false, error: 'Invalid task status filter' });
+    }
+
+    const data = await Q.getTasks({ status, assigned_role, limit, offset });
+    const role = String(req.admin.role || '').toLowerCase();
+    const visibleTasks = data.tasks.filter(t => canViewTaskForRole(req.admin, t));
+
+    const dashboardTaskMap = {
+      owner: ['all'],
+      coowner: ['all'],
+      admin: ['all'],
+      mod: ['tickets', 'community moderation'],
+      pr: ['platform_updates', 'announcements'],
+      bug_tester: ['bug_reports', 'testing'],
+      helper: ['support'],
+    };
+
+    res.json({
+      success: true,
+      tasks: visibleTasks,
+      total: visibleTasks.length,
+      role,
+      dashboardTaskMap,
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Failed to load tasks' });
+  }
+});
+
+router.get('/tasks/:id', MW.helperOrAbove, MW.auditLog('tasks'), async (req, res) => {
+  try {
+    const task = await Q.getTaskById(req.params.id);
+    if (!task) return res.status(404).json({ success: false, error: 'Task not found' });
+    if (!canViewTaskForRole(req.admin, task)) {
+      return res.status(403).json({ success: false, error: 'Insufficient permissions for this task' });
+    }
+    res.json({ success: true, task });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Failed to load task' });
+  }
+});
+
+router.post('/tasks/request', MW.helperOrAbove, MW.auditLog('tasks'), async (req, res) => {
+  try {
+    const { title, description, category, priority, due_date } = req.body || {};
+    if (!title) return res.status(400).json({ success: false, error: 'Task title is required' });
+
+    const normalizedPriority = String(priority || 'normal').toLowerCase();
+    if (!TASK_PRIORITIES.includes(normalizedPriority)) {
+      return res.status(400).json({ success: false, error: 'Invalid priority value' });
+    }
+
+    const task = await Q.createTask({
+      id: crypto.randomUUID(),
+      title: String(title).trim(),
+      description: description ? String(description).trim() : null,
+      priority: normalizedPriority,
+      status: 'requested',
+      category: category ? String(category).trim() : null,
+      requested_by: req.admin.id,
+      created_by: req.admin.id,
+      due_date: due_date || null,
+    });
+
+    await Q.addTaskComment({
+      id: crypto.randomUUID(),
+      task_id: task.id,
+      admin_id: req.admin.id,
+      admin_email: req.admin.email,
+      comment: 'Task requested',
+      old_status: null,
+      new_status: 'requested',
+    });
+
+    res.json({ success: true, task });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Failed to request task' });
+  }
+});
+
+router.post('/tasks', MW.helperOrAbove, MW.sensitiveActionLimiter, MW.auditLog('tasks'), async (req, res) => {
+  try {
+    const role = String(req.admin.role || '').toLowerCase();
+    if (!roleCanCreateTasks(role)) {
+      return res.status(403).json({ success: false, error: 'Only owner/co-owner can create direct tasks' });
+    }
+
+    const { title, description, category, priority, assigned_role, assigned_user_id, due_date } = req.body || {};
+    if (!title) return res.status(400).json({ success: false, error: 'Task title is required' });
+
+    const normalizedPriority = String(priority || 'normal').toLowerCase();
+    if (!TASK_PRIORITIES.includes(normalizedPriority)) {
+      return res.status(400).json({ success: false, error: 'Invalid priority value' });
+    }
+
+    const task = await Q.createTask({
+      id: crypto.randomUUID(),
+      title: String(title).trim(),
+      description: description ? String(description).trim() : null,
+      category: category ? String(category).trim() : null,
+      priority: normalizedPriority,
+      status: 'approved',
+      assigned_role: assigned_role ? String(assigned_role).toLowerCase() : null,
+      assigned_user_id: assigned_user_id || null,
+      requested_by: req.admin.id,
+      created_by: req.admin.id,
+      due_date: due_date || null,
+    });
+
+    res.json({ success: true, task });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Failed to create task' });
+  }
+});
+
+router.post('/tasks/:id/approve', MW.ownerOrCoowner, MW.sensitiveActionLimiter, MW.auditLog('tasks'), async (req, res) => {
+  try {
+    const task = await Q.getTaskById(req.params.id);
+    if (!task) return res.status(404).json({ success: false, error: 'Task not found' });
+
+    if (task.status !== 'requested') {
+      return res.status(400).json({ success: false, error: 'Only requested tasks can be approved' });
+    }
+
+    const updated = await Q.updateTask(req.params.id, {
+      status: 'approved',
+      approved_by: req.admin.id,
+      assigned_role: req.body?.assigned_role ? String(req.body.assigned_role).toLowerCase() : task.assigned_role,
+      assigned_user_id: req.body?.assigned_user_id || task.assigned_user_id,
+      due_date: req.body?.due_date || task.due_date,
+    });
+
+    await Q.addTaskComment({
+      id: crypto.randomUUID(),
+      task_id: task.id,
+      admin_id: req.admin.id,
+      admin_email: req.admin.email,
+      comment: req.body?.comment ? String(req.body.comment).trim() : 'Task approved',
+      old_status: task.status,
+      new_status: 'approved',
+    });
+
+    res.json({ success: true, task: updated });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Failed to approve task' });
+  }
+});
+
+router.post('/tasks/:id/assign', MW.ownerOrCoowner, MW.sensitiveActionLimiter, MW.auditLog('tasks'), async (req, res) => {
+  try {
+    const task = await Q.getTaskById(req.params.id);
+    if (!task) return res.status(404).json({ success: false, error: 'Task not found' });
+
+    const assigned_role = req.body?.assigned_role ? String(req.body.assigned_role).toLowerCase() : null;
+    const assigned_user_id = req.body?.assigned_user_id || null;
+    if (!assigned_role && !assigned_user_id) {
+      return res.status(400).json({ success: false, error: 'assigned_role or assigned_user_id is required' });
+    }
+
+    const nextStatus = task.status === 'approved' ? 'open' : task.status;
+    const updated = await Q.updateTask(req.params.id, { assigned_role, assigned_user_id, status: nextStatus });
+
+    await Q.addTaskComment({
+      id: crypto.randomUUID(),
+      task_id: task.id,
+      admin_id: req.admin.id,
+      admin_email: req.admin.email,
+      comment: req.body?.comment ? String(req.body.comment).trim() : 'Task reassigned',
+      old_status: task.status,
+      new_status: nextStatus,
+    });
+
+    res.json({ success: true, task: updated });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Failed to assign task' });
+  }
+});
+
+router.put('/tasks/:id', MW.helperOrAbove, MW.auditLog('tasks'), async (req, res) => {
+  try {
+    const task = await Q.getTaskById(req.params.id);
+    if (!task) return res.status(404).json({ success: false, error: 'Task not found' });
+    if (!canViewTaskForRole(req.admin, task)) {
+      return res.status(403).json({ success: false, error: 'Insufficient permissions for this task' });
+    }
+
+    const role = String(req.admin.role || '').toLowerCase();
+    const patch = { ...req.body };
+    if (patch.status) {
+      patch.status = String(patch.status).toLowerCase();
+      if (!TASK_STATUSES.includes(patch.status)) {
+        return res.status(400).json({ success: false, error: 'Invalid task status' });
+      }
+    }
+
+    if (patch.priority) {
+      patch.priority = String(patch.priority).toLowerCase();
+      if (!TASK_PRIORITIES.includes(patch.priority)) {
+        return res.status(400).json({ success: false, error: 'Invalid task priority' });
+      }
+    }
+
+    const privileged = ['owner', 'coowner'].includes(role);
+    if (!privileged) {
+      delete patch.assigned_role;
+      delete patch.assigned_user_id;
+      delete patch.approved_by;
+      if (task.assigned_user_id && task.assigned_user_id !== req.admin.id && task.assigned_role !== role) {
+        return res.status(403).json({ success: false, error: 'Only assigned members can edit this task' });
+      }
+    }
+
+    const comment = patch.comment ? String(patch.comment).trim() : null;
+    delete patch.comment;
+    const updated = await Q.updateTask(req.params.id, patch);
+
+    if (comment) {
+      await Q.addTaskComment({
+        id: crypto.randomUUID(),
+        task_id: task.id,
+        admin_id: req.admin.id,
+        admin_email: req.admin.email,
+        comment,
+        old_status: task.status,
+        new_status: patch.status || task.status,
+      });
+    }
+
+    res.json({ success: true, task: updated });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Failed to update task' });
+  }
+});
+
+router.post('/tasks/:id/comment', MW.helperOrAbove, MW.auditLog('tasks'), async (req, res) => {
+  try {
+    const task = await Q.getTaskById(req.params.id);
+    if (!task) return res.status(404).json({ success: false, error: 'Task not found' });
+    if (!canViewTaskForRole(req.admin, task)) {
+      return res.status(403).json({ success: false, error: 'Insufficient permissions for this task' });
+    }
+
+    const comment = String(req.body?.comment || '').trim();
+    if (!comment) return res.status(400).json({ success: false, error: 'Comment is required' });
+
+    const row = await Q.addTaskComment({
+      id: crypto.randomUUID(),
+      task_id: task.id,
+      admin_id: req.admin.id,
+      admin_email: req.admin.email,
+      comment,
+      old_status: task.status,
+      new_status: task.status,
+    });
+    res.json({ success: true, comment: row });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Failed to add task comment' });
+  }
+});
+
+router.delete('/tasks/:id', MW.ownerOrCoowner, MW.sensitiveActionLimiter, MW.requireConfirmation, MW.auditLog('tasks'), async (req, res) => {
+  try {
+    await Q.deleteTask(req.params.id);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Failed to delete task' });
   }
 });
 
@@ -1448,3 +2573,4 @@ const ticketRoutes = require('./tickets-routes');
 router.use('/tickets', MW.helperOrAbove, ticketRoutes);
 
 module.exports = router;
+module.exports.setDiscordBot = setDiscordBot;

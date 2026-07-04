@@ -30,6 +30,7 @@ echo ""
 echo "Step 4/5: Generating anti-tampering baseline"
 node file-protection/agent/baseline-generator.js || {
     echo "⚠️  Baseline generation failed (continuing with existing baseline)"
+    echo "   If BASELINE_RFID_REQUIRED=true, create + approve an RFID baseline challenge first."
 }
 
 # Step 5: Start the bot

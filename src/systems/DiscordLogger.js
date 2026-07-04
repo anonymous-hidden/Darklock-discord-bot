@@ -32,9 +32,7 @@ class DiscordLogger {
             messages: 8,
             members: 12,
             server: 8,
-            voice: 3,
-            mod: 12,
-            automod: 12
+            voice: 3
         };
     }
 
@@ -68,51 +66,37 @@ class DiscordLogger {
     async _getLogChannel(guild, category = 'general') {
         const { config, notif } = await this._getGuildSettings(guild.id);
 
-        const canSendLog = (ch) => {
-            if (!ch || !ch.isTextBased()) return false;
-            const perms = ch.permissionsFor(guild.members.me);
-            return perms?.has('SendMessages') && perms?.has('EmbedLinks');
-        };
-
-        const tryChannel = async (id) => {
+        const tryChannel = (id) => {
             if (!id) return null;
-            const ch = guild.channels.cache.get(String(id)) || await guild.channels.fetch(String(id)).catch(() => null);
-            if (canSendLog(ch)) return ch;
+            const ch = guild.channels.cache.get(String(id));
+            if (ch && ch.isTextBased() && ch.permissionsFor(guild.members.me)?.has('SendMessages')) return ch;
             return null;
         };
 
         // Category-specific channels (from notification_settings JSON)
         if (category === 'messages') {
-            const ch = await tryChannel(notif.message_log_channel);
+            const ch = tryChannel(notif.message_log_channel);
             if (ch) return ch;
         }
         if (category === 'members') {
-            const ch = await tryChannel(notif.join_leave_channel);
+            const ch = tryChannel(notif.join_leave_channel);
             if (ch) return ch;
         }
         if (category === 'automod') {
-            const ch = await tryChannel(notif.automod_log_channel || config.automod_log_channel || config.security_log_channel);
+            const ch = tryChannel(notif.automod_log_channel);
             if (ch) return ch;
         }
         if (category === 'mod') {
-            const ch = await tryChannel(config.mod_log_channel);
+            const ch = tryChannel(config.mod_log_channel);
             if (ch) return ch;
         }
         if (category === 'server') {
-            const ch = await tryChannel(notif.server_changes_channel);
+            const ch = tryChannel(notif.server_changes_channel);
             if (ch) return ch;
         }
 
         // Fall back to the general log channel
-        const configured = await tryChannel(config.log_channel_id);
-        if (configured) return configured;
-
-        return guild.channels.cache.find(ch => {
-            if (!canSendLog(ch)) return false;
-            const name = String(ch.name || '').toLowerCase();
-            return ['security-log', 'security-logs', 'mod-log', 'mod-logs', 'audit-log', 'audit-logs', 'logs']
-                .some(token => name.includes(token));
-        }) || null;
+        return tryChannel(config.log_channel_id);
     }
 
     _settingEnabled(settings, toggleKey, eventKey, defaultValue = false) {
@@ -128,6 +112,53 @@ class DiscordLogger {
         }
 
         return defaultValue;
+    }
+
+    _notifBool(settings, key, defaultValue = false) {
+        const notif = settings?.notif || {};
+        if (Object.prototype.hasOwnProperty.call(notif, key)) return !!notif[key];
+        return defaultValue;
+    }
+
+    _resolveEmbedColor(settings, fallbackHex) {
+        const customHex = String(settings?.notif?.log_embed_color || '').trim();
+        if (/^#[0-9a-fA-F]{6}$/.test(customHex)) return customHex;
+        return fallbackHex;
+    }
+
+    _applyAvatarIfEnabled(embed, user, settings) {
+        if (!this._notifBool(settings, 'log_show_avatars', true)) return;
+        if (!user?.displayAvatarURL) return;
+        embed.setThumbnail(user.displayAvatarURL({ dynamic: true }));
+    }
+
+    _normalizeModAction(action) {
+        const key = String(action || '').toLowerCase().trim();
+        if (!key) return 'action';
+        if (key === 'mute') return 'timeout';
+        if (key === 'untimeout') return 'unmute';
+        return key;
+    }
+
+    _getCustomModCard(settings, action) {
+        const cards = settings?.notif?.custom_log_cards;
+        if (!cards || !cards.enabled) return null;
+
+        const actionKey = this._normalizeModAction(action);
+        const card = cards[actionKey];
+        if (!card || typeof card !== 'object') return null;
+
+        const title = String(card.title || '').trim().substring(0, 80);
+        const icon = String(card.icon || '').trim();
+        const color = /^#[0-9a-fA-F]{6}$/.test(String(card.color || '').trim())
+            ? String(card.color).trim()
+            : null;
+
+        return {
+            title: title || null,
+            icon: icon ? Array.from(icon).slice(0, 2).join('') : null,
+            color
+        };
     }
 
     _allowBurst(guildId, category) {
@@ -174,49 +205,18 @@ class DiscordLogger {
         }
     }
 
-    _clip(value, max = 1024, fallback = '*None*') {
-        const text = String(value || '').trim();
-        if (!text) return fallback;
-        return text.length > max ? `${text.slice(0, max - 3)}...` : text;
-    }
-
-    _userLabel(user, idFallback = null) {
-        const id = user?.id || idFallback;
-        if (!id) return '*Unresolved user*';
-        const name = user?.tag || user?.username || user?.globalName || 'Unknown user';
-        return `${name}\n<@${id}>\n\`${id}\``;
-    }
-
-    _executorLabel(audit) {
-        if (audit?.user) return this._userLabel(audit.user);
-        return '*Not resolved from audit log*';
-    }
-
-    _sleep(ms) {
-        return new Promise(resolve => setTimeout(resolve, ms));
-    }
-
     async _executor(guild, type, targetId) {
         if (!type || !guild.members.me?.permissions?.has('ViewAuditLog')) return null;
-        for (let attempt = 0; attempt < 3; attempt++) {
-            try {
-                if (attempt > 0) await this._sleep(850);
-                const logs = await guild.fetchAuditLogs({ type, limit: 8 });
-                const entry = logs.entries.find(e => {
-                    const age = Date.now() - e.createdTimestamp;
-                    const targetMatches = !targetId ||
-                        e.target?.id === targetId ||
-                        e.extra?.id === targetId ||
-                        e.changes?.some(change => String(change?.new || change?.old || '') === String(targetId));
-                    return age < 30000 && targetMatches;
-                });
-                if (entry) return { user: entry.executor, reason: entry.reason, id: entry.id };
-            } catch (err) {
-                this.bot.logger?.debug(`[DiscordLogger] Audit lookup failed: ${err.message}`);
-                return null;
-            }
+        try {
+            const logs = await guild.fetchAuditLogs({ type, limit: 5 });
+            const entry = logs.entries.find(e => {
+                const age = Date.now() - e.createdTimestamp;
+                return age < 15000 && (!targetId || e.target?.id === targetId);
+            });
+            return entry ? { user: entry.executor, reason: entry.reason } : null;
+        } catch {
+            return null;
         }
-        return null;
     }
 
     // ── Public logging methods ───────────────────────────────────────────
@@ -230,25 +230,33 @@ class DiscordLogger {
         const settings = await this._getGuildSettings(message.guild.id);
         if (!this._settingEnabled(settings, 'log_deletes', 'message_delete', false)) return;
 
-        const content = message.content?.substring(0, 1024) || '*[No text content]*';
+        const compact = this._notifBool(settings, 'log_compact', false);
+        const showContent = this._notifBool(settings, 'log_show_content', true);
+        const content = showContent
+            ? (message.content?.substring(0, 1024) || '*[No text content]*')
+            : '*[Hidden by log privacy setting]*';
         const attachments = message.attachments?.size > 0
             ? [...message.attachments.values()].map(a => a.url).join('\n').substring(0, 512)
             : null;
 
         const embed = new EmbedBuilder()
-            .setColor('#e74c3c')
+            .setColor(this._resolveEmbedColor(settings, '#e74c3c'))
             .setTitle('🗑️ Message Deleted')
-            .addFields(
-                { name: '👤 Author', value: message.author ? `${message.author.username}\n<@${message.author.id}>\n\`${message.author.id}\`` : '*Unknown*', inline: true },
-                { name: '📍 Channel', value: `<#${message.channelId}>\n\`${message.channelId}\``, inline: true },
-                { name: '📝 Content', value: content }
-            )
+            .addFields(compact
+                ? [
+                    { name: '👤 Author', value: message.author ? `<@${message.author.id}>` : '*Unknown*', inline: true },
+                    { name: '📍 Channel', value: `<#${message.channelId}>`, inline: true },
+                    { name: 'Content', value: content }
+                ]
+                : [
+                    { name: '👤 Author', value: message.author ? `${message.author.username}\n<@${message.author.id}>\n\`${message.author.id}\`` : '*Unknown*', inline: true },
+                    { name: '📍 Channel', value: `<#${message.channelId}>\n\`${message.channelId}\``, inline: true },
+                    { name: '📝 Content', value: content }
+                ])
             .setFooter({ text: `Message ID: ${message.id}` })
             .setTimestamp();
 
-        if (message.author?.displayAvatarURL) {
-            embed.setThumbnail(message.author.displayAvatarURL({ dynamic: true }));
-        }
+        this._applyAvatarIfEnabled(embed, message.author, settings);
         if (attachments) {
             embed.addFields({ name: '📎 Attachments', value: attachments });
         }
@@ -266,22 +274,36 @@ class DiscordLogger {
         const settings = await this._getGuildSettings(newMessage.guild.id);
         if (!this._settingEnabled(settings, 'log_edits', 'message_edit', false)) return;
 
-        const oldContent = oldMessage.content?.substring(0, 512) || '*[Content unavailable]*';
-        const newContent = newMessage.content?.substring(0, 512) || '*[No content]*';
+        const compact = this._notifBool(settings, 'log_compact', false);
+        const showContent = this._notifBool(settings, 'log_show_content', true);
+
+        const oldContent = showContent
+            ? (oldMessage.content?.substring(0, 512) || '*[Content unavailable]*')
+            : '*[Hidden by log privacy setting]*';
+        const newContent = showContent
+            ? (newMessage.content?.substring(0, 512) || '*[No content]*')
+            : '*[Hidden by log privacy setting]*';
 
         const embed = new EmbedBuilder()
-            .setColor('#f39c12')
-            .setTitle(' Message Edited')
-            .addFields(
-                { name: ' Author', value: `${newMessage.author.username}\n<@${newMessage.author.id}>`, inline: true },
-                { name: ' Channel', value: `<#${newMessage.channelId}>`, inline: true },
-                { name: ' Jump to Message', value: `[Click here](${newMessage.url})`, inline: true },
-                { name: ' Before', value: oldContent },
-                { name: ' After', value: newContent }
-            )
-            .setThumbnail(newMessage.author.displayAvatarURL({ dynamic: true }))
+            .setColor(this._resolveEmbedColor(settings, '#f39c12'))
+            .setTitle('✏️ Message Edited')
+            .addFields(compact
+                ? [
+                    { name: '👤 Author', value: `<@${newMessage.author.id}>`, inline: true },
+                    { name: '📍 Channel', value: `<#${newMessage.channelId}>`, inline: true },
+                    { name: 'Before → After', value: `${oldContent}\n→\n${newContent}` }
+                ]
+                : [
+                    { name: '👤 Author', value: `${newMessage.author.username}\n<@${newMessage.author.id}>`, inline: true },
+                    { name: '📍 Channel', value: `<#${newMessage.channelId}>`, inline: true },
+                    { name: '🔗 Jump to Message', value: `[Click here](${newMessage.url})`, inline: true },
+                    { name: '📝 Before', value: oldContent },
+                    { name: '📝 After', value: newContent }
+                ])
             .setFooter({ text: `Message ID: ${newMessage.id}` })
             .setTimestamp();
+
+        this._applyAvatarIfEnabled(embed, newMessage.author, settings);
 
         await this._send(newMessage.guild, 'messages', embed);
     }
@@ -298,16 +320,17 @@ class DiscordLogger {
         const isNew = days < 7;
 
         const embed = new EmbedBuilder()
-            .setColor(isNew ? '#e74c3c' : '#2ecc71')
-            .setTitle(` Member Joined${isNew ? ' ⚠️ New Account' : ''}`)
+            .setColor(this._resolveEmbedColor(settings, isNew ? '#e74c3c' : '#2ecc71'))
+            .setTitle(`📥 Member Joined${isNew ? ' ⚠️ New Account' : ''}`)
             .addFields(
-                { name: ' User', value: `${member.user.username}\n<@${member.id}>\n\`${member.id}\``, inline: true },
-                { name: ' Member Count', value: `${member.guild.memberCount}`, inline: true },
-                { name: ' Account Created', value: `<t:${Math.floor(member.user.createdTimestamp / 1000)}:R>`, inline: true }
+                { name: '👤 User', value: `${member.user.username}\n<@${member.id}>\n\`${member.id}\``, inline: true },
+                { name: '🏠 Member Count', value: `${member.guild.memberCount}`, inline: true },
+                { name: '📅 Account Created', value: `<t:${Math.floor(member.user.createdTimestamp / 1000)}:R>`, inline: true }
             )
-            .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
             .setFooter({ text: `User ID: ${member.id}` })
             .setTimestamp();
+
+        this._applyAvatarIfEnabled(embed, member.user, settings);
 
         if (isNew) {
             embed.addFields({ name: '⚠️ Warning', value: `Account is only **${days} day${days === 1 ? '' : 's'}** old` });
@@ -332,17 +355,18 @@ class DiscordLogger {
             .join(', ') || '*None*';
 
         const embed = new EmbedBuilder()
-            .setColor('#7f8c8d')
-            .setTitle(' Member Left')
+            .setColor(this._resolveEmbedColor(settings, '#7f8c8d'))
+            .setTitle('📤 Member Left')
             .addFields(
-                { name: ' User', value: `${member.user.username}\n<@${member.id}>\n\`${member.id}\``, inline: true },
-                { name: ' Remaining', value: `${member.guild.memberCount}`, inline: true },
-                { name: ' Joined At', value: joinedAt, inline: true },
-                { name: ' Roles', value: roles.substring(0, 1024) }
+                { name: '👤 User', value: `${member.user.username}\n<@${member.id}>\n\`${member.id}\``, inline: true },
+                { name: '🏠 Remaining', value: `${member.guild.memberCount}`, inline: true },
+                { name: '📅 Joined At', value: joinedAt, inline: true },
+                { name: '🏷️ Roles', value: roles.substring(0, 1024) }
             )
-            .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
             .setFooter({ text: `User ID: ${member.id}` })
             .setTimestamp();
+
+        this._applyAvatarIfEnabled(embed, member.user, settings);
 
         await this._send(member.guild, 'members', embed);
     }
@@ -353,7 +377,7 @@ class DiscordLogger {
      */
     async logModAction(guild, { action, target, moderator, reason, duration, details } = {}) {
         const settings = await this._getGuildSettings(guild.id);
-        const actionKey = action ? String(action).toLowerCase() : 'mod_action';
+        const actionKey = this._normalizeModAction(action || 'mod_action');
         if (!this._settingEnabled(settings, 'mod_logging', actionKey, true)) return;
 
         const colors = {
@@ -367,26 +391,25 @@ class DiscordLogger {
             unban: '✅', unmute: '🔊', purge: '🗑️', lockdown: '🔒'
         };
 
-        const actionStr = action?.toLowerCase() || 'action';
-        const titleAction = String(action || 'action').replace(/_/g, ' ').toUpperCase();
+        const actionStr = this._normalizeModAction(action || 'action');
+        const customCard = this._getCustomModCard(settings, actionStr);
+        const resolvedColor = customCard?.color || this._resolveEmbedColor(settings, colors[actionStr] || '#5865F2');
+        const resolvedIcon = customCard?.icon || icons[actionStr] || '⚖️';
+        const resolvedTitle = customCard?.title || `Moderation: ${action?.toUpperCase() || 'ACTION'}`;
         const embed = new EmbedBuilder()
-            .setColor(colors[actionStr] || '#5865F2')
-            .setTitle(`${icons[actionStr] || '⚖️'} Moderation Action`)
-            .setDescription(`**${titleAction}** was recorded for this server.`)
+            .setColor(resolvedColor)
+            .setTitle(`${resolvedIcon} ${resolvedTitle}`)
             .addFields(
-                { name: 'Target', value: this._userLabel(target, target?.id), inline: true },
-                { name: 'Actor', value: moderator ? this._userLabel(moderator, moderator.id) : '*Automatic system action*', inline: true },
-                { name: 'Reason', value: this._clip(reason, 1024, '*No reason provided*'), inline: false }
+                { name: '👤 Target', value: target ? `${target.username || target.username || target.id}\n<@${target.id}>` : '*Unknown*', inline: true },
+                { name: '🛡️ Moderator', value: moderator ? `${moderator.username || moderator.username}\n<@${moderator.id}>` : '*Automatic*', inline: true },
+                { name: '📋 Reason', value: reason || '*No reason provided*', inline: false }
             )
-            .setFooter({ text: `DarkLock logs • ${titleAction}` })
             .setTimestamp();
 
         if (duration) embed.addFields({ name: '⏱️ Duration', value: String(duration), inline: true });
-        if (details) embed.addFields({ name: 'Details', value: this._clip(details) });
+        if (details) embed.addFields({ name: '📎 Details', value: String(details).substring(0, 1024) });
 
-        if (target?.displayAvatarURL) {
-            embed.setThumbnail(target.displayAvatarURL({ dynamic: true }));
-        }
+        this._applyAvatarIfEnabled(embed, target, settings);
 
         await this._send(guild, 'mod', embed);
     }
@@ -404,9 +427,9 @@ class DiscordLogger {
             .setColor(type === 'create' ? '#2ecc71' : type === 'delete' ? '#e74c3c' : '#f39c12')
             .setTitle(type === 'create' ? '➕ Role Created' : type === 'delete' ? '➖ Role Deleted' : '✏️ Role Updated')
             .addFields(
-                { name: ' Role', value: `${role.name}\n\`${role.id}\``, inline: true },
-                { name: ' Color', value: role.hexColor || '#000000', inline: true },
-                { name: ' Position', value: String(role.position), inline: true }
+                { name: '🏷️ Role', value: `${role.name}\n\`${role.id}\``, inline: true },
+                { name: '🎨 Color', value: role.hexColor || '#000000', inline: true },
+                { name: '📊 Position', value: String(role.position), inline: true }
             )
             .setFooter({ text: `Role ID: ${role.id}` })
             .setTimestamp();
@@ -415,8 +438,8 @@ class DiscordLogger {
         if (oldRole && oldRole.permissions.bitfield !== role.permissions.bitfield) {
             embed.addFields({ name: 'Permissions Changed', value: 'Role permissions were updated.' });
         }
-        embed.addFields({ name: 'Executor', value: this._executorLabel(audit), inline: true });
-        if (audit?.reason) embed.addFields({ name: 'Reason', value: this._clip(audit.reason) });
+        if (audit?.user) embed.addFields({ name: 'Executor', value: `${audit.user.username}\n<@${audit.user.id}>`, inline: true });
+        if (audit?.reason) embed.addFields({ name: 'Reason', value: audit.reason.substring(0, 1024) });
 
         await this._send(role.guild, 'server', embed);
     }
@@ -436,16 +459,16 @@ class DiscordLogger {
             .setColor(type === 'create' ? '#2ecc71' : type === 'delete' ? '#e74c3c' : '#f39c12')
             .setTitle(type === 'create' ? '➕ Channel Created' : type === 'delete' ? '➖ Channel Deleted' : '✏️ Channel Updated')
             .addFields(
-                { name: ' Name', value: `#${channel.name}`, inline: true },
-                { name: ' Type', value: typeNames[channel.type] || 'Unknown', inline: true },
-                { name: ' Category', value: channel.parent?.name || '*None*', inline: true }
+                { name: '📌 Name', value: `#${channel.name}`, inline: true },
+                { name: '📂 Type', value: typeNames[channel.type] || 'Unknown', inline: true },
+                { name: '🗂️ Category', value: channel.parent?.name || '*None*', inline: true }
             )
             .setFooter({ text: `Channel ID: ${channel.id}` })
             .setTimestamp();
 
         if (oldChannel && oldChannel.name !== channel.name) embed.addFields({ name: 'Name Changed', value: `#${oldChannel.name} → #${channel.name}` });
-        embed.addFields({ name: 'Executor', value: this._executorLabel(audit), inline: true });
-        if (audit?.reason) embed.addFields({ name: 'Reason', value: this._clip(audit.reason) });
+        if (audit?.user) embed.addFields({ name: 'Executor', value: `${audit.user.username}\n<@${audit.user.id}>`, inline: true });
+        if (audit?.reason) embed.addFields({ name: 'Reason', value: audit.reason.substring(0, 1024) });
 
         await this._send(channel.guild, 'server', embed);
     }
@@ -454,27 +477,35 @@ class DiscordLogger {
         const settings = await this._getGuildSettings(ban.guild.id);
         if (!this._settingEnabled(settings, 'mod_logging', type, true)) return;
 
+        const actionStr = this._normalizeModAction(type);
+        const customCard = this._getCustomModCard(settings, actionStr);
+        const defaultColor = type === 'ban' ? '#e74c3c' : '#2ecc71';
+        const defaultTitle = type === 'ban' ? 'Member Banned' : 'Member Unbanned';
+        const defaultIcon = type === 'ban' ? '🔨' : '✅';
+
         const audit = await this._executor(ban.guild, type === 'ban' ? AuditLogEvent.MemberBanAdd : AuditLogEvent.MemberBanRemove, ban.user.id);
         const embed = new EmbedBuilder()
-            .setColor(type === 'ban' ? '#e74c3c' : '#2ecc71')
-            .setTitle(type === 'ban' ? '🔨 Member Banned' : '✅ Member Unbanned')
+            .setColor(customCard?.color || defaultColor)
+            .setTitle(`${customCard?.icon || defaultIcon} ${customCard?.title || defaultTitle}`)
             .addFields(
-                { name: 'Target', value: this._userLabel(ban.user), inline: true },
-                { name: 'Executor', value: this._executorLabel(audit), inline: true },
-                { name: 'Reason', value: this._clip(audit?.reason || ban.reason, 1024, '*No reason provided*') }
+                { name: 'Target', value: `${ban.user.username}\n<@${ban.user.id}>\n\`${ban.user.id}\``, inline: true },
+                { name: 'Executor', value: audit?.user ? `${audit.user.username}\n<@${audit.user.id}>` : '*Unknown*', inline: true },
+                { name: 'Reason', value: audit?.reason || ban.reason || '*No reason provided*' }
             )
-            .setThumbnail(ban.user.displayAvatarURL({ dynamic: true }))
             .setTimestamp();
+
+        this._applyAvatarIfEnabled(embed, ban.user, settings);
         await this._send(ban.guild, 'mod', embed);
     }
 
     async logMemberUpdate(oldMember, newMember) {
         const settings = await this._getGuildSettings(newMember.guild.id);
         const changes = [];
+        const hadTimeoutChange = oldMember.communicationDisabledUntilTimestamp !== newMember.communicationDisabledUntilTimestamp;
         if (oldMember.nickname !== newMember.nickname && this._settingEnabled(settings, 'log_members', 'nickname', false)) {
             changes.push(`Nickname: ${oldMember.nickname || oldMember.user.username} → ${newMember.nickname || newMember.user.username}`);
         }
-        if (oldMember.communicationDisabledUntilTimestamp !== newMember.communicationDisabledUntilTimestamp &&
+        if (hadTimeoutChange &&
             this._settingEnabled(settings, 'mod_logging', 'timeout', false)) {
             changes.push(newMember.communicationDisabledUntilTimestamp
                 ? `Timeout until <t:${Math.floor(newMember.communicationDisabledUntilTimestamp / 1000)}:F>`
@@ -482,18 +513,23 @@ class DiscordLogger {
         }
         if (!changes.length) return;
 
+        const timeoutOnly = hadTimeoutChange && changes.length === 1;
+        const timeoutAction = newMember.communicationDisabledUntilTimestamp ? 'timeout' : 'unmute';
+        const timeoutCard = timeoutOnly ? this._getCustomModCard(settings, timeoutAction) : null;
+        const timeoutIcon = newMember.communicationDisabledUntilTimestamp ? '🔇' : '🔊';
+        const timeoutTitle = newMember.communicationDisabledUntilTimestamp ? 'Member Timed Out' : 'Timeout Removed';
+
         const audit = await this._executor(newMember.guild, AuditLogEvent.MemberUpdate, newMember.id);
         const embed = new EmbedBuilder()
-            .setColor('#f39c12')
-            .setTitle(' Member Updated')
+            .setColor(timeoutCard?.color || '#f39c12')
+            .setTitle(timeoutOnly ? `${timeoutCard?.icon || timeoutIcon} ${timeoutCard?.title || timeoutTitle}` : '👤 Member Updated')
             .addFields(
                 { name: 'Target', value: `${newMember.user.username}\n<@${newMember.id}>`, inline: true },
                 { name: 'Changes', value: changes.join('\n').substring(0, 1024), inline: false }
             )
             .setTimestamp();
         if (audit?.user) embed.addFields({ name: 'Executor', value: `${audit.user.username}\n<@${audit.user.id}>`, inline: true });
-        else embed.addFields({ name: 'Executor', value: '*Not resolved from audit log*', inline: true });
-        if (audit?.reason) embed.addFields({ name: 'Reason', value: this._clip(audit.reason) });
+        if (audit?.reason) embed.addFields({ name: 'Reason', value: audit.reason.substring(0, 1024) });
         await this._send(newMember.guild, 'members', embed);
     }
 
@@ -521,7 +557,7 @@ class DiscordLogger {
         const audit = await this._executor(channel.guild, AuditLogEvent.WebhookUpdate, channel.id);
         const embed = new EmbedBuilder()
             .setColor('#f39c12')
-            .setTitle(' Webhook Updated')
+            .setTitle('🪝 Webhook Updated')
             .addFields(
                 { name: 'Channel', value: `${channel}\n\`${channel.id}\``, inline: true },
                 { name: 'Executor', value: audit?.user ? `${audit.user.username}\n<@${audit.user.id}>` : '*Unknown*', inline: true }
@@ -542,7 +578,7 @@ class DiscordLogger {
         const audit = await this._executor(newGuild, AuditLogEvent.GuildUpdate, newGuild.id);
         const embed = new EmbedBuilder()
             .setColor('#f39c12')
-            .setTitle(' Server Updated')
+            .setTitle('🏠 Server Updated')
             .addFields({ name: 'Changes', value: changes.join('\n').substring(0, 1024) })
             .setTimestamp();
         if (audit?.user) embed.addFields({ name: 'Executor', value: `${audit.user.username}\n<@${audit.user.id}>`, inline: true });
